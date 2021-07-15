@@ -2,6 +2,9 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmTransformDepfile.h"
 
+#include <algorithm>
+#include <functional>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -13,7 +16,8 @@
 
 #include "cmGccDepfileReader.h"
 #include "cmGccDepfileReaderTypes.h"
-#include "cmStringAlgorithms.h"
+#include "cmGlobalGenerator.h"
+#include "cmLocalGenerator.h"
 #include "cmSystemTools.h"
 
 namespace {
@@ -34,8 +38,19 @@ void WriteFilenameGcc(cmsys::ofstream& fout, const std::string& filename)
   }
 }
 
-void WriteGccDepfile(cmsys::ofstream& fout, const cmGccDepfileContent& content)
+void WriteDepfile(cmDepfileFormat format, cmsys::ofstream& fout,
+                  const cmLocalGenerator& lg,
+                  const cmGccDepfileContent& content)
 {
+  std::function<std::string(const std::string&)> formatPath =
+    [&lg](const std::string& path) -> std::string {
+    return lg.MaybeRelativeToTopBinDir(path);
+  };
+  if (lg.GetGlobalGenerator()->GetName() == "Xcode") {
+    // full paths must be preserved for Xcode compliance
+    formatPath = [](const std::string& path) -> std::string { return path; };
+  }
+
   for (auto const& dep : content) {
     bool first = true;
     for (auto const& rule : dep.rules) {
@@ -43,72 +58,81 @@ void WriteGccDepfile(cmsys::ofstream& fout, const cmGccDepfileContent& content)
         fout << " \\\n  ";
       }
       first = false;
-      WriteFilenameGcc(fout, rule);
+      WriteFilenameGcc(fout, formatPath(rule));
     }
     fout << ':';
     for (auto const& path : dep.paths) {
       fout << " \\\n  ";
-      WriteFilenameGcc(fout, path);
+      WriteFilenameGcc(fout, formatPath(path));
     }
     fout << '\n';
   }
-}
 
-void WriteVsTlog(cmsys::ofstream& fout, const cmGccDepfileContent& content)
-{
-  for (auto const& dep : content) {
-    fout << '^';
-    bool first = true;
-    for (auto const& rule : dep.rules) {
-      if (!first) {
-        fout << '|';
+  if (format == cmDepfileFormat::MakeDepfile) {
+    // In this case, phony targets must be added for all dependencies
+    fout << "\n";
+    for (auto const& dep : content) {
+      for (auto const& path : dep.paths) {
+        fout << "\n";
+        WriteFilenameGcc(fout, formatPath(path));
+        fout << ":\n";
       }
-      first = false;
-      fout << cmSystemTools::ConvertToOutputPath(rule);
-    }
-    fout << "\r\n";
-    for (auto const& path : dep.paths) {
-      fout << cmSystemTools::ConvertToOutputPath(path) << "\r\n";
     }
   }
 }
+
+void WriteMSBuildAdditionalInputs(cmsys::ofstream& fout,
+                                  cmLocalGenerator const& lg,
+                                  cmGccDepfileContent const& content)
+{
+  if (content.empty()) {
+    return;
+  }
+
+  // Write a UTF-8 BOM so MSBuild knows the encoding when reading the file.
+  static const char utf8bom[] = { char(0xEF), char(0xBB), char(0xBF) };
+  fout.write(utf8bom, sizeof(utf8bom));
+
+  // Write the format expected by MSBuild CustomBuild AdditionalInputs.
+  const char* sep = "";
+  for (std::string path : content.front().paths) {
+    if (!cmSystemTools::FileIsFullPath(path)) {
+      path =
+        cmSystemTools::CollapseFullPath(path, lg.GetCurrentBinaryDirectory());
+    }
+    std::replace(path.begin(), path.end(), '/', '\\');
+    fout << sep << path;
+    sep = ";";
+  }
+  fout << "\n";
+}
 }
 
-bool cmTransformDepfile(cmDepfileFormat format, const std::string& prefix,
+bool cmTransformDepfile(cmDepfileFormat format, const cmLocalGenerator& lg,
                         const std::string& infile, const std::string& outfile)
 {
   cmGccDepfileContent content;
   if (cmSystemTools::FileExists(infile)) {
-    auto result = cmReadGccDepfile(infile.c_str());
+    auto result =
+      cmReadGccDepfile(infile.c_str(), lg.GetCurrentBinaryDirectory());
     if (!result) {
       return false;
     }
     content = *std::move(result);
   }
 
-  for (auto& dep : content) {
-    for (auto& rule : dep.rules) {
-      if (!cmSystemTools::FileIsFullPath(rule)) {
-        rule = cmStrCat(prefix, rule);
-      }
-    }
-    for (auto& path : dep.paths) {
-      if (!cmSystemTools::FileIsFullPath(path)) {
-        path = cmStrCat(prefix, path);
-      }
-    }
-  }
-
+  cmSystemTools::MakeDirectory(cmSystemTools::GetFilenamePath(outfile));
   cmsys::ofstream fout(outfile.c_str());
   if (!fout) {
     return false;
   }
   switch (format) {
     case cmDepfileFormat::GccDepfile:
-      WriteGccDepfile(fout, content);
+    case cmDepfileFormat::MakeDepfile:
+      WriteDepfile(format, fout, lg, content);
       break;
-    case cmDepfileFormat::VsTlog:
-      WriteVsTlog(fout, content);
+    case cmDepfileFormat::MSBuildAdditionalInputs:
+      WriteMSBuildAdditionalInputs(fout, lg, content);
       break;
   }
   return true;

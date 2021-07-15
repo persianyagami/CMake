@@ -171,7 +171,7 @@ std::string cmLocalVisualStudioGenerator::ConstructScript(
 
   // for visual studio IDE add extra stuff to the PATH
   // if CMAKE_MSVCIDE_RUN_PATH is set.
-  if (this->Makefile->GetDefinition("MSVC_IDE")) {
+  if (this->GetGlobalGenerator()->IsVisualStudio()) {
     cmProp extraPath = this->Makefile->GetDefinition("CMAKE_MSVCIDE_RUN_PATH");
     if (extraPath) {
       script += newline;
@@ -207,10 +207,8 @@ std::string cmLocalVisualStudioGenerator::ConstructScript(
     }
 
     if (workingDirectory.empty()) {
-      script +=
-        this->ConvertToOutputFormat(this->MaybeConvertToRelativePath(
-                                      this->GetCurrentBinaryDirectory(), cmd),
-                                    cmOutputConverter::SHELL);
+      script += this->ConvertToOutputFormat(
+        this->MaybeRelativeToCurBinDir(cmd), cmOutputConverter::SHELL);
     } else {
       script += this->ConvertToOutputFormat(cmd.c_str(), SHELL);
     }

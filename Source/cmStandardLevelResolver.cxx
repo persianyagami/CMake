@@ -36,6 +36,9 @@ const char* const CXX_FEATURES[] = { nullptr FOR_EACH_CXX_FEATURE(
 
 const char* const CUDA_FEATURES[] = { nullptr FOR_EACH_CUDA_FEATURE(
   FEATURE_STRING) };
+
+const char* const HIP_FEATURES[] = { nullptr FOR_EACH_HIP_FEATURE(
+  FEATURE_STRING) };
 #undef FEATURE_STRING
 
 struct StandardNeeded
@@ -43,6 +46,16 @@ struct StandardNeeded
   int index;
   int value;
 };
+
+int ParseStd(std::string const& level)
+{
+  try {
+    return std::stoi(level);
+  } catch (std::invalid_argument&) {
+    // Fall through to use an invalid value.
+  }
+  return -1;
+}
 
 struct StanardLevelComputer
 {
@@ -52,7 +65,7 @@ struct StanardLevelComputer
     , Levels(std::move(levels))
     , LevelsAsStrings(std::move(levelsStr))
   {
-    assert(levels.size() == levelsStr.size());
+    assert(this->Levels.size() == this->LevelsAsStrings.size());
   }
 
   std::string GetCompileOptionDef(cmMakefile* makefile,
@@ -113,17 +126,8 @@ struct StanardLevelComputer
       standardStr = "03";
     }
 
-    int standardValue = -1;
-    int defaultValue = -1;
-    try {
-      standardValue = std::stoi(standardStr);
-      defaultValue = std::stoi(*defaultStd);
-    } catch (std::invalid_argument&) {
-      // fall through as we want an error
-      // when we can't find the bad value in the `stds` vector
-    }
-
-    auto stdIt = std::find(cm::cbegin(stds), cm::cend(stds), standardValue);
+    auto stdIt =
+      std::find(cm::cbegin(stds), cm::cend(stds), ParseStd(standardStr));
     if (stdIt == cm::cend(stds)) {
       std::string e =
         cmStrCat(this->Language, "_STANDARD is set to invalid value '",
@@ -134,7 +138,7 @@ struct StanardLevelComputer
     }
 
     auto defaultStdIt =
-      std::find(cm::cbegin(stds), cm::cend(stds), defaultValue);
+      std::find(cm::cbegin(stds), cm::cend(stds), ParseStd(*defaultStd));
     if (defaultStdIt == cm::cend(stds)) {
       std::string e = cmStrCat("CMAKE_", this->Language,
                                "_STANDARD_DEFAULT is set to invalid value '",
@@ -183,7 +187,7 @@ struct StanardLevelComputer
     auto needed = this->HighestStandardNeeded(makefile, feature);
 
     cmProp existingStandard = currentLangStandardValue;
-    if (existingStandard == nullptr) {
+    if (!existingStandard) {
       cmProp defaultStandard = makefile->GetDefinition(
         cmStrCat("CMAKE_", this->Language, "_STANDARD_DEFAULT"));
       if (cmNonempty(defaultStandard)) {
@@ -195,7 +199,7 @@ struct StanardLevelComputer
     if (existingStandard) {
       existingLevelIter =
         std::find(cm::cbegin(this->Levels), cm::cend(this->Levels),
-                  std::stoi(*existingStandard));
+                  ParseStd(*existingStandard));
       if (existingLevelIter == cm::cend(this->Levels)) {
         const std::string e =
           cmStrCat("The ", this->Language, "_STANDARD property on target \"",
@@ -240,7 +244,7 @@ struct StanardLevelComputer
     }
     // convert defaultStandard to an integer
     if (std::find(cm::cbegin(this->Levels), cm::cend(this->Levels),
-                  std::stoi(*defaultStandard)) == cm::cend(this->Levels)) {
+                  ParseStd(*defaultStandard)) == cm::cend(this->Levels)) {
       const std::string e = cmStrCat("The CMAKE_", this->Language,
                                      "_STANDARD_DEFAULT variable contains an "
                                      "invalid value: \"",
@@ -257,7 +261,7 @@ struct StanardLevelComputer
 
     auto existingLevelIter =
       std::find(cm::cbegin(this->Levels), cm::cend(this->Levels),
-                std::stoi(*existingStandard));
+                ParseStd(*existingStandard));
     if (existingLevelIter == cm::cend(this->Levels)) {
       const std::string e =
         cmStrCat("The ", this->Language, "_STANDARD property on target \"",
@@ -305,10 +309,10 @@ struct StanardLevelComputer
 };
 
 std::unordered_map<std::string, StanardLevelComputer> StandardComputerMapping =
-  {
-    { "C",
-      StanardLevelComputer{ "C", std::vector<int>{ 90, 99, 11 },
-                            std::vector<std::string>{ "90", "99", "11" } } },
+  { { "C",
+      StanardLevelComputer{
+        "C", std::vector<int>{ 90, 99, 11, 17, 23 },
+        std::vector<std::string>{ "90", "99", "11", "17", "23" } } },
     { "CXX",
       StanardLevelComputer{
         "CXX", std::vector<int>{ 98, 11, 14, 17, 20, 23 },
@@ -318,13 +322,17 @@ std::unordered_map<std::string, StanardLevelComputer> StandardComputerMapping =
         "CUDA", std::vector<int>{ 03, 11, 14, 17, 20, 23 },
         std::vector<std::string>{ "03", "11", "14", "17", "20", "23" } } },
     { "OBJC",
-      StanardLevelComputer{ "OBJC", std::vector<int>{ 90, 99, 11 },
-                            std::vector<std::string>{ "90", "99", "11" } } },
+      StanardLevelComputer{
+        "OBJC", std::vector<int>{ 90, 99, 11, 17, 23 },
+        std::vector<std::string>{ "90", "99", "11", "17", "23" } } },
     { "OBJCXX",
       StanardLevelComputer{
         "OBJCXX", std::vector<int>{ 98, 11, 14, 17, 20, 23 },
         std::vector<std::string>{ "98", "11", "14", "17", "20", "23" } } },
-  };
+    { "HIP",
+      StanardLevelComputer{
+        "HIP", std::vector<int>{ 98, 11, 14, 17, 20, 23 },
+        std::vector<std::string>{ "98", "11", "14", "17", "20", "23" } } } };
 }
 
 std::string cmStandardLevelResolver::GetCompileOptionDef(
@@ -379,6 +387,10 @@ bool cmStandardLevelResolver::CheckCompileFeaturesAvailable(
     return false;
   }
 
+  if (!this->Makefile->GetGlobalGenerator()->GetLanguageEnabled(lang)) {
+    return true;
+  }
+
   const char* features = this->CompileFeaturesAvailable(lang, error);
   if (!features) {
     return false;
@@ -430,6 +442,13 @@ bool cmStandardLevelResolver::CompileFeatureKnown(
                  cmStrCmp(feature)) != cm::cend(CUDA_FEATURES);
   if (isCudaFeature) {
     lang = "CUDA";
+    return true;
+  }
+  bool isHIPFeature =
+    std::find_if(cm::cbegin(HIP_FEATURES) + 1, cm::cend(HIP_FEATURES),
+                 cmStrCmp(feature)) != cm::cend(HIP_FEATURES);
+  if (isHIPFeature) {
+    lang = "HIP";
     return true;
   }
   std::ostringstream e;

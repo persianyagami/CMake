@@ -104,6 +104,8 @@ const char* cmGlobalVisualStudioGenerator::GetIDEVersion() const
       return "15.0";
     case cmGlobalVisualStudioGenerator::VS16:
       return "16.0";
+    case cmGlobalVisualStudioGenerator::VS17:
+      return "17.0";
   }
   return "";
 }
@@ -170,6 +172,15 @@ void cmGlobalVisualStudioGenerator::WriteSLNHeader(std::ostream& fout)
         fout << "# Visual Studio Version 16\n";
       }
       break;
+    case cmGlobalVisualStudioGenerator::VS17:
+      // Visual Studio 17 writes .sln format 12.00
+      fout << "Microsoft Visual Studio Solution File, Format Version 12.00\n";
+      if (this->ExpressEdition) {
+        fout << "# Visual Studio Express 17 for Windows Desktop\n";
+      } else {
+        fout << "# Visual Studio Version 17\n";
+      }
+      break;
   }
 }
 
@@ -200,7 +211,7 @@ void cmGlobalVisualStudioGenerator::AddExtraIDETargets()
       // considered always out of date.
       cmTarget* allBuild = gen[0]->AddUtilityCommand(
         "ALL_BUILD", true, no_working_dir, no_byproducts, no_depends,
-        no_commands, false, "Build all projects");
+        no_commands, cmPolicies::NEW, false, "Build all projects");
 
       gen[0]->AddGeneratorTarget(
         cm::make_unique<cmGeneratorTarget>(allBuild, gen[0]));

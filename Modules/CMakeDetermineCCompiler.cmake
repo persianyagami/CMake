@@ -59,7 +59,7 @@ else()
 
     # finally list compilers to try
     if(NOT CMAKE_C_COMPILER_INIT)
-      set(CMAKE_C_COMPILER_LIST ${_CMAKE_TOOLCHAIN_PREFIX}cc ${_CMAKE_TOOLCHAIN_PREFIX}gcc cl bcc xlc clang)
+      set(CMAKE_C_COMPILER_LIST ${_CMAKE_TOOLCHAIN_PREFIX}cc ${_CMAKE_TOOLCHAIN_PREFIX}gcc cl bcc xlc icx clang)
     endif()
 
     _cmake_find_compiler(C)
@@ -85,6 +85,11 @@ else()
 
     # ARMClang need target options
     "--target=arm-arm-none-eabi -mcpu=cortex-m3"
+
+    # MSVC needs at least one include directory for __has_include to function,
+    # but custom toolchains may run MSVC with no INCLUDE env var and no -I flags.
+    # Also avoid linking so this works with no LIB env var.
+    "-c -I__does_not_exist__"
     )
 endif()
 if(CMAKE_C_COMPILER_TARGET)
@@ -134,7 +139,8 @@ else()
     # variable but are not aware of CMAKE_C_COMPILER_FRONTEND_VARIANT.
     # They pre-date our support for the GNU-like variant targeting the
     # MSVC ABI so we do not consider that here.
-    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang"
+      OR "x${CMAKE_C_COMPILER_ID}" STREQUAL "xIntelLLVM")
       if("x${CMAKE_C_SIMULATE_ID}" STREQUAL "xMSVC")
         set(CMAKE_C_COMPILER_FRONTEND_VARIANT "MSVC")
       else()
@@ -161,9 +167,10 @@ if (NOT _CMAKE_TOOLCHAIN_PREFIX)
 
   if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|QCC")
     get_filename_component(COMPILER_BASENAME "${CMAKE_C_COMPILER}" NAME)
-    if (COMPILER_BASENAME MATCHES "^(.+-)(clang|g?cc)(-[0-9]+(\\.[0-9]+)*)?(-[^.]+)?(\\.exe)?$")
+    if (COMPILER_BASENAME MATCHES "^(.+-)?(clang|g?cc)(-cl)?(-[0-9]+(\\.[0-9]+)*)?(-[^.]+)?(\\.exe)?$")
       set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_MATCH_1})
-      set(_CMAKE_COMPILER_SUFFIX ${CMAKE_MATCH_5})
+      set(_CMAKE_TOOLCHAIN_SUFFIX ${CMAKE_MATCH_4})
+      set(_CMAKE_COMPILER_SUFFIX ${CMAKE_MATCH_6})
     elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
       if(CMAKE_C_COMPILER_TARGET)
         set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_C_COMPILER_TARGET}-)

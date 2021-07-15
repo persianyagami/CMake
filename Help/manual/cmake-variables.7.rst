@@ -130,6 +130,7 @@ Variables that Provide Information
    /variable/PROJECT-NAME_BINARY_DIR
    /variable/PROJECT-NAME_DESCRIPTION
    /variable/PROJECT-NAME_HOMEPAGE_URL
+   /variable/PROJECT-NAME_IS_TOP_LEVEL
    /variable/PROJECT-NAME_SOURCE_DIR
    /variable/PROJECT-NAME_VERSION
    /variable/PROJECT-NAME_VERSION_MAJOR
@@ -139,6 +140,7 @@ Variables that Provide Information
    /variable/PROJECT_BINARY_DIR
    /variable/PROJECT_DESCRIPTION
    /variable/PROJECT_HOMEPAGE_URL
+   /variable/PROJECT_IS_TOP_LEVEL
    /variable/PROJECT_NAME
    /variable/PROJECT_SOURCE_DIR
    /variable/PROJECT_VERSION
@@ -228,6 +230,7 @@ Variables that Change Behavior
    /variable/CMAKE_PROJECT_INCLUDE_BEFORE
    /variable/CMAKE_PROJECT_PROJECT-NAME_INCLUDE
    /variable/CMAKE_PROJECT_PROJECT-NAME_INCLUDE_BEFORE
+   /variable/CMAKE_REQUIRE_FIND_PACKAGE_PackageName
    /variable/CMAKE_SKIP_INSTALL_ALL_DEPENDENCY
    /variable/CMAKE_STAGING_PREFIX
    /variable/CMAKE_SUBLIME_TEXT_2_ENV_SETTINGS
@@ -243,6 +246,7 @@ Variables that Change Behavior
    /variable/CMAKE_SYSTEM_LIBRARY_PATH
    /variable/CMAKE_SYSTEM_PREFIX_PATH
    /variable/CMAKE_SYSTEM_PROGRAM_PATH
+   /variable/CMAKE_TLS_VERIFY
    /variable/CMAKE_USER_MAKE_RULES_OVERRIDE
    /variable/CMAKE_WARN_DEPRECATED
    /variable/CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION
@@ -278,6 +282,7 @@ Variables that Describe the System
    /variable/ANDROID
    /variable/APPLE
    /variable/BORLAND
+   /variable/CMAKE_ANDROID_NDK_VERSION
    /variable/CMAKE_CL_64
    /variable/CMAKE_COMPILER_2005
    /variable/CMAKE_HOST_APPLE
@@ -420,8 +425,10 @@ Variables that Control the Build
    /variable/CMAKE_LANG_CPPCHECK
    /variable/CMAKE_LANG_CPPLINT
    /variable/CMAKE_LANG_INCLUDE_WHAT_YOU_USE
+   /variable/CMAKE_LANG_LINKER_LAUNCHER
    /variable/CMAKE_LANG_LINK_LIBRARY_FILE_FLAG
    /variable/CMAKE_LANG_LINK_LIBRARY_FLAG
+   /variable/CMAKE_LANG_LINK_WHAT_YOU_USE_FLAG
    /variable/CMAKE_LANG_VISIBILITY_PRESET
    /variable/CMAKE_LIBRARY_OUTPUT_DIRECTORY
    /variable/CMAKE_LIBRARY_OUTPUT_DIRECTORY_CONFIG
@@ -432,6 +439,7 @@ Variables that Control the Build
    /variable/CMAKE_LINK_LIBRARY_FILE_FLAG
    /variable/CMAKE_LINK_LIBRARY_FLAG
    /variable/CMAKE_LINK_WHAT_YOU_USE
+   /variable/CMAKE_LINK_WHAT_YOU_USE_CHECK
    /variable/CMAKE_MACOSX_BUNDLE
    /variable/CMAKE_MACOSX_RPATH
    /variable/CMAKE_MAP_IMPORTED_CONFIG_CONFIG
@@ -470,6 +478,7 @@ Variables that Control the Build
    /variable/CMAKE_TRY_COMPILE_TARGET_TYPE
    /variable/CMAKE_UNITY_BUILD
    /variable/CMAKE_UNITY_BUILD_BATCH_SIZE
+   /variable/CMAKE_UNITY_BUILD_UNIQUE_ID
    /variable/CMAKE_USE_RELATIVE_PATHS
    /variable/CMAKE_VISIBILITY_INLINES_HIDDEN
    /variable/CMAKE_VS_GLOBALS
@@ -517,7 +526,9 @@ Variables for Languages
    /variable/CMAKE_Fortran_MODDIR_DEFAULT
    /variable/CMAKE_Fortran_MODDIR_FLAG
    /variable/CMAKE_Fortran_MODOUT_FLAG
+   /variable/CMAKE_HIP_ARCHITECTURES
    /variable/CMAKE_ISPC_HEADER_DIRECTORY
+   /variable/CMAKE_ISPC_HEADER_SUFFIX
    /variable/CMAKE_ISPC_INSTRUCTION_SETS
    /variable/CMAKE_LANG_ANDROID_TOOLCHAIN_MACHINE
    /variable/CMAKE_LANG_ANDROID_TOOLCHAIN_PREFIX
@@ -641,6 +652,7 @@ Variables for CTest
    /variable/CTEST_RESOURCE_SPEC_FILE
    /variable/CTEST_RUN_CURRENT_SCRIPT
    /variable/CTEST_SCP_COMMAND
+   /variable/CTEST_SCRIPT_DIRECTORY
    /variable/CTEST_SITE
    /variable/CTEST_SUBMIT_URL
    /variable/CTEST_SOURCE_DIRECTORY
@@ -664,6 +676,7 @@ Variables for CPack
 
    /variable/CPACK_ABSOLUTE_DESTINATION_FILES
    /variable/CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY
+   /variable/CPACK_CUSTOM_INSTALL_VARIABLES
    /variable/CPACK_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION
    /variable/CPACK_INCLUDE_TOPLEVEL_DIRECTORY
    /variable/CPACK_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS

@@ -13,6 +13,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <cm/optional>
@@ -169,7 +170,8 @@ public:
     const std::string& target, const std::vector<std::string>& byproducts,
     const std::vector<std::string>& depends,
     const cmCustomCommandLines& commandLines, cmCustomCommandType type,
-    const char* comment, const char* workingDir, bool escapeOldStyle = true,
+    const char* comment, const char* workingDir,
+    cmPolicies::PolicyStatus cmp0116, bool escapeOldStyle = true,
     bool uses_terminal = false, const std::string& depfile = "",
     const std::string& job_pool = "", bool command_expand_lists = false,
     bool stdPipesUTF8 = false);
@@ -186,11 +188,11 @@ public:
     const std::string& output, const std::vector<std::string>& depends,
     const std::string& main_dependency,
     const cmCustomCommandLines& commandLines, const char* comment,
-    const char* workingDir, const CommandSourceCallback& callback = nullptr,
-    bool replace = false, bool escapeOldStyle = true,
-    bool uses_terminal = false, bool command_expand_lists = false,
-    const std::string& depfile = "", const std::string& job_pool = "",
-    bool stdPipesUTF8 = false);
+    const char* workingDir, cmPolicies::PolicyStatus cmp0116,
+    const CommandSourceCallback& callback = nullptr, bool replace = false,
+    bool escapeOldStyle = true, bool uses_terminal = false,
+    bool command_expand_lists = false, const std::string& depfile = "",
+    const std::string& job_pool = "", bool stdPipesUTF8 = false);
   void AddCustomCommandToOutput(
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& byproducts,
@@ -198,17 +200,18 @@ public:
     const std::string& main_dependency,
     const cmImplicitDependsList& implicit_depends,
     const cmCustomCommandLines& commandLines, const char* comment,
-    const char* workingDir, const CommandSourceCallback& callback = nullptr,
-    bool replace = false, bool escapeOldStyle = true,
-    bool uses_terminal = false, bool command_expand_lists = false,
-    const std::string& depfile = "", const std::string& job_pool = "",
-    bool stdPipesUTF8 = false);
+    const char* workingDir, cmPolicies::PolicyStatus cmp0116,
+    const CommandSourceCallback& callback = nullptr, bool replace = false,
+    bool escapeOldStyle = true, bool uses_terminal = false,
+    bool command_expand_lists = false, const std::string& depfile = "",
+    const std::string& job_pool = "", bool stdPipesUTF8 = false);
   void AddCustomCommandOldStyle(const std::string& target,
                                 const std::vector<std::string>& outputs,
                                 const std::vector<std::string>& depends,
                                 const std::string& source,
                                 const cmCustomCommandLines& commandLines,
-                                const char* comment);
+                                const char* comment,
+                                cmPolicies::PolicyStatus cmp0116);
   void AppendCustomCommandToOutput(
     const std::string& output, const std::vector<std::string>& depends,
     const cmImplicitDependsList& implicit_depends,
@@ -228,6 +231,10 @@ public:
   cmTarget* AddImportedTarget(const std::string& name,
                               cmStateEnums::TargetType type, bool global);
 
+  std::pair<cmTarget&, bool> CreateNewTarget(
+    const std::string& name, cmStateEnums::TargetType type,
+    cmTarget::PerConfig perConfig = cmTarget::PerConfig::Yes);
+
   cmTarget* AddNewTarget(cmStateEnums::TargetType type,
                          const std::string& name);
 
@@ -243,11 +250,6 @@ public:
                           bool excludeFromAll = false);
 
   /**
-   * Return the utility target output source file name and the CMP0049 name.
-   */
-  cmUtilityOutput GetUtilityOutput(cmTarget* target);
-
-  /**
    * Dispatch adding a utility to the build.  A utility target is a command
    * that is run every time the target is built.
    */
@@ -255,10 +257,10 @@ public:
     const std::string& utilityName, bool excludeFromAll,
     const char* workingDir, const std::vector<std::string>& byproducts,
     const std::vector<std::string>& depends,
-    const cmCustomCommandLines& commandLines, bool escapeOldStyle = true,
-    const char* comment = nullptr, bool uses_terminal = false,
-    bool command_expand_lists = false, const std::string& job_pool = "",
-    bool stdPipesUTF8 = false);
+    const cmCustomCommandLines& commandLines, cmPolicies::PolicyStatus cmp0116,
+    bool escapeOldStyle = true, const char* comment = nullptr,
+    bool uses_terminal = false, bool command_expand_lists = false,
+    const std::string& job_pool = "", bool stdPipesUTF8 = false);
 
   /**
    * Add a subdirectory to the build.
@@ -297,7 +299,7 @@ public:
                           const char* doc, cmStateEnums::CacheEntryType type,
                           bool force = false)
   {
-    AddCacheDefinition(name, value.c_str(), doc, type, force);
+    this->AddCacheDefinition(name, value.c_str(), doc, type, force);
   }
 
   /**
@@ -312,6 +314,8 @@ public:
    * Specify the name of the project for this build.
    */
   void SetProjectName(std::string const& name);
+
+  void InitCMAKE_CONFIGURATION_TYPES(std::string const& genDefault);
 
   /* Get the default configuration */
   std::string GetDefaultConfiguration() const;
@@ -489,6 +493,7 @@ public:
   const std::string& GetSafeDefinition(const std::string&) const;
   const std::string& GetRequiredDefinition(const std::string& name) const;
   bool IsDefinitionSet(const std::string&) const;
+  bool IsNormalDefinitionSet(const std::string&) const;
   bool GetDefExpandList(const std::string& name, std::vector<std::string>& out,
                         bool emptyArgs = false) const;
   /**
@@ -904,6 +909,7 @@ public:
     const std::string& inputFile, const std::string& targetName,
     std::unique_ptr<cmCompiledGeneratorExpression> outputName,
     std::unique_ptr<cmCompiledGeneratorExpression> condition,
+    const std::string& newLineCharacter, mode_t permissions,
     bool inputIsContent);
   const std::vector<std::unique_ptr<cmGeneratorExpressionEvaluationFile>>&
   GetEvaluationFiles() const;
@@ -994,7 +1000,7 @@ private:
 
   struct DeferCommand
   {
-    // Id is empty for an already-executed or cancelled operation.
+    // Id is empty for an already-executed or canceled operation.
     std::string Id;
     std::string FilePath;
     cmListFileFunction Command;

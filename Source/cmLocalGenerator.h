@@ -4,6 +4,7 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -22,9 +23,12 @@
 #include "cmProperty.h"
 #include "cmStateSnapshot.h"
 
+class cmCompiledGeneratorExpression;
 class cmComputeLinkInformation;
+class cmCustomCommand;
 class cmCustomCommandGenerator;
 class cmCustomCommandLines;
+class cmGeneratedFileStream;
 class cmGeneratorTarget;
 class cmGlobalGenerator;
 class cmImplicitDependsList;
@@ -167,13 +171,21 @@ public:
                                             cmGeneratorTarget* target,
                                             const std::string& config,
                                             const std::string& lang);
+  bool AppendLWYUFlags(std::string& flags, const cmGeneratorTarget* target,
+                       const std::string& lang);
+
+  enum class IncludePathStyle
+  {
+    Default,
+    Absolute,
+  };
+
   //! Get the include flags for the current makefile and language
-  std::string GetIncludeFlags(const std::vector<std::string>& includes,
-                              cmGeneratorTarget* target,
-                              const std::string& lang,
-                              bool forceFullPaths = false,
-                              bool forResponseFile = false,
-                              const std::string& config = "");
+  std::string GetIncludeFlags(
+    std::vector<std::string> const& includes, cmGeneratorTarget* target,
+    std::string const& lang, std::string const& config,
+    bool forResponseFile = false,
+    IncludePathStyle pathStyle = IncludePathStyle::Default);
 
   using GeneratorTargetVector =
     std::vector<std::unique_ptr<cmGeneratorTarget>>;
@@ -252,11 +264,6 @@ public:
   bool GetRealDependency(const std::string& name, const std::string& config,
                          std::string& dep);
 
-  virtual std::string ConvertToIncludeReference(
-    std::string const& path,
-    cmOutputConverter::OutputFormat format = cmOutputConverter::SHELL,
-    bool forceFullPaths = false);
-
   /** Called from command-line hook to clear dependencies.  */
   virtual void ClearDependencies(cmMakefile* /* mf */, bool /* verbose */) {}
 
@@ -320,7 +327,8 @@ public:
     const std::string& target, const std::vector<std::string>& byproducts,
     const std::vector<std::string>& depends,
     const cmCustomCommandLines& commandLines, cmCustomCommandType type,
-    const char* comment, const char* workingDir, bool escapeOldStyle = true,
+    const char* comment, const char* workingDir,
+    cmPolicies::PolicyStatus cmp0116, bool escapeOldStyle = true,
     bool uses_terminal = false, const std::string& depfile = "",
     const std::string& job_pool = "", bool command_expand_lists = false,
     cmObjectLibraryCommands objLibCommands = cmObjectLibraryCommands::Reject,
@@ -333,7 +341,8 @@ public:
     const std::string& output, const std::vector<std::string>& depends,
     const std::string& main_dependency,
     const cmCustomCommandLines& commandLines, const char* comment,
-    const char* workingDir, bool replace = false, bool escapeOldStyle = true,
+    const char* workingDir, cmPolicies::PolicyStatus cmp0116,
+    bool replace = false, bool escapeOldStyle = true,
     bool uses_terminal = false, bool command_expand_lists = false,
     const std::string& depfile = "", const std::string& job_pool = "",
     bool stdPipesUTF8 = false);
@@ -344,7 +353,8 @@ public:
     const std::string& main_dependency,
     const cmImplicitDependsList& implicit_depends,
     const cmCustomCommandLines& commandLines, const char* comment,
-    const char* workingDir, bool replace = false, bool escapeOldStyle = true,
+    const char* workingDir, cmPolicies::PolicyStatus cmp0116,
+    bool replace = false, bool escapeOldStyle = true,
     bool uses_terminal = false, bool command_expand_lists = false,
     const std::string& depfile = "", const std::string& job_pool = "",
     bool stdPipesUTF8 = false);
@@ -357,23 +367,44 @@ public:
     const std::string& utilityName, bool excludeFromAll,
     const char* workingDir, const std::vector<std::string>& byproducts,
     const std::vector<std::string>& depends,
-    const cmCustomCommandLines& commandLines, bool escapeOldStyle = true,
-    const char* comment = nullptr, bool uses_terminal = false,
-    bool command_expand_lists = false, const std::string& job_pool = "",
-    bool stdPipesUTF8 = false);
+    const cmCustomCommandLines& commandLines, cmPolicies::PolicyStatus cmp0116,
+    bool escapeOldStyle = true, const char* comment = nullptr,
+    bool uses_terminal = false, bool command_expand_lists = false,
+    const std::string& job_pool = "", bool stdPipesUTF8 = false);
+
+  virtual std::string CreateUtilityOutput(
+    std::string const& targetName, std::vector<std::string> const& byproducts,
+    cmListFileBacktrace const& bt);
+
+  virtual std::vector<cmCustomCommandGenerator> MakeCustomCommandGenerators(
+    cmCustomCommand const& cc, std::string const& config);
+
+  std::vector<std::string> ExpandCustomCommandOutputPaths(
+    cmCompiledGeneratorExpression const& cge, std::string const& config);
+  std::vector<std::string> ExpandCustomCommandOutputGenex(
+    std::string const& o, cmListFileBacktrace const& bt);
 
   /**
    * Add target byproducts.
    */
   void AddTargetByproducts(cmTarget* target,
-                           const std::vector<std::string>& byproducts);
+                           const std::vector<std::string>& byproducts,
+                           cmListFileBacktrace const& bt,
+                           cmCommandOrigin origin);
+
+  enum class OutputRole
+  {
+    Primary,
+    Byproduct,
+  };
 
   /**
    * Add source file outputs.
    */
   void AddSourceOutputs(cmSourceFile* source,
-                        const std::vector<std::string>& outputs,
-                        const std::vector<std::string>& byproducts);
+                        std::vector<std::string> const& outputs,
+                        OutputRole role, cmListFileBacktrace const& bt,
+                        cmCommandOrigin origin);
 
   /**
    * Return the target if the provided source name is a byproduct of a utility
@@ -432,16 +463,6 @@ public:
 
   std::string const& GetCurrentBinaryDirectory() const;
   std::string const& GetCurrentSourceDirectory() const;
-
-  /**
-   * Convert the given remote path to a relative path with respect to
-   * the given local path.  Both paths must use forward slashes and not
-   * already be escaped or quoted.
-   * The conversion is skipped if the paths are not both in the source
-   * or both in the binary tree.
-   */
-  std::string MaybeConvertToRelativePath(std::string const& local_path,
-                                         std::string const& remote_path) const;
 
   /**
    * Generate a macOS application bundle Info.plist file.
@@ -529,6 +550,13 @@ public:
   cmProp GetRuleLauncher(cmGeneratorTarget* target, const std::string& prop);
 
 protected:
+  // The default implementation ignores the IncludePathStyle and always
+  // uses absolute paths.  A generator may override this to use relative
+  // paths in some cases.
+  virtual std::string ConvertToIncludeReference(
+    std::string const& path, IncludePathStyle pathStyle,
+    cmOutputConverter::OutputFormat format);
+
   //! put all the libraries for a target on into the given stream
   void OutputLinkLibraries(cmComputeLinkInformation* pcli,
                            cmLinkLineComputer* linkLineComputer,
@@ -545,6 +573,8 @@ protected:
     std::ostream& os, const std::string& config,
     std::vector<std::string> const& configurationTypes);
 
+  virtual void AddGeneratorSpecificInstallSetup(std::ostream&) {}
+
   std::string& CreateSafeUniqueObjectFileName(const std::string& sin,
                                               std::string const& dir_max);
 
@@ -553,14 +583,13 @@ protected:
   virtual bool CheckDefinition(std::string const& define) const;
 
   cmMakefile* Makefile;
-  cmStateSnapshot StateSnapshot;
   cmListFileBacktrace DirectoryBacktrace;
   cmGlobalGenerator* GlobalGenerator;
   std::map<std::string, std::string> UniqueObjectNamesMap;
   std::string::size_type ObjectPathMax;
   std::set<std::string> ObjectMaxPathViolations;
 
-  std::set<std::string> EnvCPATH;
+  std::vector<std::string> EnvCPATH;
 
   using GeneratorTargetMap =
     std::unordered_map<std::string, cmGeneratorTarget*>;
@@ -607,9 +636,12 @@ private:
   using OutputToSourceMap = std::unordered_map<std::string, SourceEntry>;
   OutputToSourceMap OutputToSource;
 
-  void UpdateOutputToSourceMap(std::string const& byproduct, cmTarget* target);
+  void UpdateOutputToSourceMap(std::string const& byproduct, cmTarget* target,
+                               cmListFileBacktrace const& bt,
+                               cmCommandOrigin origin);
   void UpdateOutputToSourceMap(std::string const& output, cmSourceFile* source,
-                               bool byproduct);
+                               OutputRole role, cmListFileBacktrace const& bt,
+                               cmCommandOrigin origin);
 
   void AddSharedFlags(std::string& flags, const std::string& lang,
                       bool shared);
@@ -625,6 +657,18 @@ private:
                          const std::string& ReuseFrom,
                          cmGeneratorTarget* reuseTarget,
                          std::vector<std::string> const& extensions);
+  void IncludeFileInUnitySources(cmGeneratedFileStream& unity_file,
+                                 std::string const& sf_full_path,
+                                 cmProp beforeInclude, cmProp afterInclude,
+                                 cmProp uniqueIdName) const;
+  std::vector<std::string> AddUnityFilesModeAuto(
+    cmGeneratorTarget* target, std::string const& lang,
+    std::vector<cmSourceFile*> const& filtered_sources, cmProp beforeInclude,
+    cmProp afterInclude, std::string const& filename_base, size_t batchSize);
+  std::vector<std::string> AddUnityFilesModeGroup(
+    cmGeneratorTarget* target, std::string const& lang,
+    std::vector<cmSourceFile*> const& filtered_sources, cmProp beforeInclude,
+    cmProp afterInclude, std::string const& filename_base);
 };
 
 #if !defined(CMAKE_BOOTSTRAP)
@@ -644,7 +688,8 @@ void AddCustomCommandToTarget(cmLocalGenerator& lg,
                               const char* workingDir, bool escapeOldStyle,
                               bool uses_terminal, const std::string& depfile,
                               const std::string& job_pool,
-                              bool command_expand_lists, bool stdPipesUTF8);
+                              bool command_expand_lists, bool stdPipesUTF8,
+                              cmPolicies::PolicyStatus cmp0116);
 
 cmSourceFile* AddCustomCommandToOutput(
   cmLocalGenerator& lg, const cmListFileBacktrace& lfbt,
@@ -655,7 +700,8 @@ cmSourceFile* AddCustomCommandToOutput(
   const cmCustomCommandLines& commandLines, const char* comment,
   const char* workingDir, bool replace, bool escapeOldStyle,
   bool uses_terminal, bool command_expand_lists, const std::string& depfile,
-  const std::string& job_pool, bool stdPipesUTF8);
+  const std::string& job_pool, bool stdPipesUTF8,
+  cmPolicies::PolicyStatus cmp0116);
 
 void AppendCustomCommandToOutput(cmLocalGenerator& lg,
                                  const cmListFileBacktrace& lfbt,
@@ -666,13 +712,14 @@ void AppendCustomCommandToOutput(cmLocalGenerator& lg,
 
 void AddUtilityCommand(cmLocalGenerator& lg, const cmListFileBacktrace& lfbt,
                        cmCommandOrigin origin, cmTarget* target,
-                       const cmUtilityOutput& force, const char* workingDir,
+                       const char* workingDir,
                        const std::vector<std::string>& byproducts,
                        const std::vector<std::string>& depends,
                        const cmCustomCommandLines& commandLines,
                        bool escapeOldStyle, const char* comment,
                        bool uses_terminal, bool command_expand_lists,
-                       const std::string& job_pool, bool stdPipesUTF8);
+                       const std::string& job_pool, bool stdPipesUTF8,
+                       cmPolicies::PolicyStatus cmp0116);
 
 std::vector<std::string> ComputeISPCObjectSuffixes(cmGeneratorTarget* target);
 std::vector<std::string> ComputeISPCExtraObjects(

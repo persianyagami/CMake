@@ -189,7 +189,7 @@ This module defines the following :prop_tgt:`IMPORTED` targets:
   (adds ``-DBOOST_ALL_NO_LIB``).
 
 ``Boost::dynamic_linking``
-  Interface target to enable dynamic linking linking with MSVC
+  Interface target to enable dynamic linking with MSVC
   (adds ``-DBOOST_ALL_DYN_LINK``).
 
 Implicit dependencies such as ``Boost::filesystem`` requiring
@@ -295,6 +295,12 @@ Other variables one may set to control this module are:
 ``Boost_LIBRARY_DIR``
   Default value for ``Boost_LIBRARY_DIR_RELEASE`` and
   ``Boost_LIBRARY_DIR_DEBUG``.
+
+``Boost_NO_WARN_NEW_VERSIONS``
+  .. versionadded:: 3.20
+
+  Set to ``ON`` to suppress the warning about unknown dependencies for new
+  Boost versions.
 
 On Visual Studio and Borland compilers Boost headers request automatic
 linking to corresponding libraries.  This requires matching libraries
@@ -853,7 +859,8 @@ endfunction()
 # Guesses Boost's compiler prefix used in built library names
 # Returns the guess by setting the variable pointed to by _ret
 function(_Boost_GUESS_COMPILER_PREFIX _ret)
-  if("x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntel")
+  if("x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntel"
+      OR "x${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" STREQUAL "xIntelLLVM")
     if(WIN32)
       set (_boost_COMPILER "-iw")
     else()
@@ -1314,7 +1321,7 @@ function(_Boost_COMPONENT_DEPENDENCIES component _ret)
       set(_Boost_TIMER_DEPENDENCIES chrono)
       set(_Boost_WAVE_DEPENDENCIES filesystem serialization thread chrono date_time atomic)
       set(_Boost_WSERIALIZATION_DEPENDENCIES serialization)
-    else()
+    elseif(Boost_VERSION_STRING VERSION_LESS 1.75.0)
       set(_Boost_CONTRACT_DEPENDENCIES thread chrono date_time)
       set(_Boost_COROUTINE_DEPENDENCIES context)
       set(_Boost_FIBER_DEPENDENCIES context)
@@ -1328,7 +1335,22 @@ function(_Boost_COMPONENT_DEPENDENCIES component _ret)
       set(_Boost_TIMER_DEPENDENCIES chrono)
       set(_Boost_WAVE_DEPENDENCIES filesystem serialization thread chrono date_time atomic)
       set(_Boost_WSERIALIZATION_DEPENDENCIES serialization)
-      if(Boost_VERSION_STRING VERSION_GREATER_EQUAL 1.75.0)
+    else()
+      set(_Boost_CONTRACT_DEPENDENCIES thread chrono date_time)
+      set(_Boost_COROUTINE_DEPENDENCIES context)
+      set(_Boost_FIBER_DEPENDENCIES context)
+      set(_Boost_IOSTREAMS_DEPENDENCIES regex)
+      set(_Boost_JSON_DEPENDENCIES container)
+      set(_Boost_LOG_DEPENDENCIES date_time log_setup filesystem thread regex chrono atomic)
+      set(_Boost_MATH_DEPENDENCIES math_c99 math_c99f math_c99l math_tr1 math_tr1f math_tr1l atomic)
+      set(_Boost_MPI_DEPENDENCIES serialization)
+      set(_Boost_MPI_PYTHON_DEPENDENCIES python${component_python_version} mpi serialization)
+      set(_Boost_NUMPY_DEPENDENCIES python${component_python_version})
+      set(_Boost_THREAD_DEPENDENCIES chrono date_time atomic)
+      set(_Boost_TIMER_DEPENDENCIES chrono)
+      set(_Boost_WAVE_DEPENDENCIES filesystem serialization thread chrono date_time atomic)
+      set(_Boost_WSERIALIZATION_DEPENDENCIES serialization)
+      if(Boost_VERSION_STRING VERSION_GREATER_EQUAL 1.77.0 AND NOT Boost_NO_WARN_NEW_VERSIONS)
         message(WARNING "New Boost version may have incorrect or missing dependencies and imported targets")
       endif()
     endif()
@@ -1383,6 +1405,7 @@ function(_Boost_COMPONENT_HEADERS component _hdrs)
   set(_Boost_LOCALE_HEADERS              "boost/locale.hpp")
   set(_Boost_LOG_HEADERS                 "boost/log/core.hpp")
   set(_Boost_LOG_SETUP_HEADERS           "boost/log/detail/setup_config.hpp")
+  set(_Boost_JSON_HEADERS                "boost/json.hpp")
   set(_Boost_MATH_HEADERS                "boost/math_fwd.hpp")
   set(_Boost_MATH_C99_HEADERS            "boost/math/tr1.hpp")
   set(_Boost_MATH_C99F_HEADERS           "boost/math/tr1.hpp")
@@ -1600,7 +1623,7 @@ else()
   # _Boost_COMPONENT_HEADERS.  See the instructions at the top of
   # _Boost_COMPONENT_DEPENDENCIES.
   set(_Boost_KNOWN_VERSIONS ${Boost_ADDITIONAL_VERSIONS}
-    "1.74.0" "1.74"
+    "1.76.0" "1.76" "1.75.0" "1.75" "1.74.0" "1.74"
     "1.73.0" "1.73" "1.72.0" "1.72" "1.71.0" "1.71" "1.70.0" "1.70" "1.69.0" "1.69"
     "1.68.0" "1.68" "1.67.0" "1.67" "1.66.0" "1.66" "1.65.1" "1.65.0" "1.65"
     "1.64.0" "1.64" "1.63.0" "1.63" "1.62.0" "1.62" "1.61.0" "1.61" "1.60.0" "1.60"
@@ -1891,7 +1914,8 @@ endif()
 if(WIN32 AND Boost_USE_DEBUG_RUNTIME)
   if("x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xMSVC"
           OR "x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xClang"
-          OR "x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntel")
+          OR "x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntel"
+          OR "x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntelLLVM")
     string(APPEND _boost_DEBUG_ABI_TAG "g")
   endif()
 endif()

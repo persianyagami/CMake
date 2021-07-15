@@ -21,6 +21,7 @@ Properties of Global Scope
    /prop_gbl/AUTOMOC_SOURCE_GROUP
    /prop_gbl/AUTOMOC_TARGETS_FOLDER
    /prop_gbl/AUTORCC_SOURCE_GROUP
+   /prop_gbl/AUTOUIC_SOURCE_GROUP
    /prop_gbl/CMAKE_C_KNOWN_FEATURES
    /prop_gbl/CMAKE_CUDA_KNOWN_FEATURES
    /prop_gbl/CMAKE_CXX_KNOWN_FEATURES
@@ -73,6 +74,7 @@ Properties on Directories
    /prop_dir/DEFINITIONS
    /prop_dir/EXCLUDE_FROM_ALL
    /prop_dir/IMPLICIT_DEPENDS_INCLUDE_TRANSFORM
+   /prop_dir/IMPORTED_TARGETS
    /prop_dir/INCLUDE_DIRECTORIES
    /prop_dir/INCLUDE_REGULAR_EXPRESSION
    /prop_dir/INTERPROCEDURAL_OPTIMIZATION
@@ -196,9 +198,11 @@ Properties on Targets
    /prop_tgt/EXCLUDE_FROM_ALL
    /prop_tgt/EXCLUDE_FROM_DEFAULT_BUILD
    /prop_tgt/EXCLUDE_FROM_DEFAULT_BUILD_CONFIG
+   /prop_tgt/EXPORT_COMPILE_COMMANDS
    /prop_tgt/EXPORT_NAME
    /prop_tgt/EXPORT_PROPERTIES
    /prop_tgt/FOLDER
+   /prop_tgt/Fortran_BUILDING_INSTRINSIC_MODULES
    /prop_tgt/Fortran_FORMAT
    /prop_tgt/Fortran_MODULE_DIRECTORY
    /prop_tgt/Fortran_PREPROCESS
@@ -210,6 +214,7 @@ Properties on Targets
    /prop_tgt/GHS_NO_SOURCE_GROUP_FILE
    /prop_tgt/GNUtoMS
    /prop_tgt/HAS_CXX
+   /prop_tgt/HIP_ARCHITECTURES
    /prop_tgt/IMPLICIT_DEPENDS_INCLUDE_TRANSFORM
    /prop_tgt/IMPORTED
    /prop_tgt/IMPORTED_COMMON_LANGUAGE_RUNTIME
@@ -259,6 +264,7 @@ Properties on Targets
    /prop_tgt/INTERPROCEDURAL_OPTIMIZATION_CONFIG
    /prop_tgt/IOS_INSTALL_COMBINED
    /prop_tgt/ISPC_HEADER_DIRECTORY
+   /prop_tgt/ISPC_HEADER_SUFFIX
    /prop_tgt/ISPC_INSTRUCTION_SETS
    /prop_tgt/JOB_POOL_COMPILE
    /prop_tgt/JOB_POOL_LINK
@@ -269,6 +275,7 @@ Properties on Targets
    /prop_tgt/LANG_CPPCHECK
    /prop_tgt/LANG_CPPLINT
    /prop_tgt/LANG_INCLUDE_WHAT_YOU_USE
+   /prop_tgt/LANG_LINKER_LAUNCHER
    /prop_tgt/LANG_VISIBILITY_PRESET
    /prop_tgt/LIBRARY_OUTPUT_DIRECTORY
    /prop_tgt/LIBRARY_OUTPUT_DIRECTORY_CONFIG
@@ -353,6 +360,7 @@ Properties on Targets
    /prop_tgt/UNITY_BUILD_CODE_AFTER_INCLUDE
    /prop_tgt/UNITY_BUILD_CODE_BEFORE_INCLUDE
    /prop_tgt/UNITY_BUILD_MODE
+   /prop_tgt/UNITY_BUILD_UNIQUE_ID
    /prop_tgt/VERSION
    /prop_tgt/VISIBILITY_INLINES_HIDDEN
    /prop_tgt/VS_CONFIGURATION_TYPE
@@ -399,7 +407,9 @@ Properties on Targets
    /prop_tgt/XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY
    /prop_tgt/XCODE_EMBED_FRAMEWORKS_REMOVE_HEADERS_ON_COPY
    /prop_tgt/XCODE_EMBED_type
+   /prop_tgt/XCODE_EMBED_type_CODE_SIGN_ON_COPY
    /prop_tgt/XCODE_EMBED_type_PATH
+   /prop_tgt/XCODE_EMBED_type_REMOVE_HEADERS_ON_COPY
    /prop_tgt/XCODE_EXPLICIT_FILE_TYPE
    /prop_tgt/XCODE_GENERATE_SCHEME
    /prop_tgt/XCODE_LINK_BUILD_PHASE_MODE
@@ -441,6 +451,7 @@ Properties on Tests
    /prop_test/DEPENDS
    /prop_test/DISABLED
    /prop_test/ENVIRONMENT
+   /prop_test/ENVIRONMENT_MODIFICATION
    /prop_test/FAIL_REGULAR_EXPRESSION
    /prop_test/FIXTURES_CLEANUP
    /prop_test/FIXTURES_REQUIRED

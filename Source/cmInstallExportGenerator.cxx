@@ -23,9 +23,10 @@ cmInstallExportGenerator::cmInstallExportGenerator(
   cmExportSet* exportSet, std::string const& destination,
   std::string file_permissions, std::vector<std::string> const& configurations,
   std::string const& component, MessageLevel message, bool exclude_from_all,
-  std::string filename, std::string name_space, bool exportOld, bool android)
+  std::string filename, std::string name_space, bool exportOld, bool android,
+  cmListFileBacktrace backtrace)
   : cmInstallGenerator(destination, configurations, component, message,
-                       exclude_from_all)
+                       exclude_from_all, false, std::move(backtrace))
   , ExportSet(exportSet)
   , FilePermissions(std::move(file_permissions))
   , FileName(std::move(filename))
@@ -122,10 +123,10 @@ size_t cmInstallExportGenerator::GetMaxConfigLength() const
 void cmInstallExportGenerator::GenerateScript(std::ostream& os)
 {
   // Skip empty sets.
-  if (ExportSet->GetTargetExports().empty()) {
+  if (this->ExportSet->GetTargetExports().empty()) {
     std::ostringstream e;
-    e << "INSTALL(EXPORT) given unknown export \"" << ExportSet->GetName()
-      << "\"";
+    e << "INSTALL(EXPORT) given unknown export \""
+      << this->ExportSet->GetName() << "\"";
     cmSystemTools::Error(e.str());
     return;
   }
@@ -183,9 +184,8 @@ void cmInstallExportGenerator::GenerateScriptActions(std::ostream& os,
                                                      Indent indent)
 {
   // Remove old per-configuration export files if the main changes.
-  std::string installedDir =
-    cmStrCat("$ENV{DESTDIR}",
-             this->ConvertToAbsoluteDestination(this->Destination), '/');
+  std::string installedDir = cmStrCat(
+    "$ENV{DESTDIR}", ConvertToAbsoluteDestination(this->Destination), '/');
   std::string installedFile = cmStrCat(installedDir, this->FileName);
   os << indent << "if(EXISTS \"" << installedFile << "\")\n";
   Indent indentN = indent.Next();

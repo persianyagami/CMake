@@ -26,7 +26,9 @@
 #include "cmSystemTools.h"
 #include "cmake.h"
 
-cmState::cmState()
+cmState::cmState(Mode mode, ProjectKind projectKind)
+  : StateMode(mode)
+  , StateProjectKind(projectKind)
 {
   this->CacheManager = cm::make_unique<cmCacheManager>();
   this->GlobVerificationManager = cm::make_unique<cmGlobVerificationManager>();
@@ -110,12 +112,9 @@ bool cmState::StringToCacheEntryType(const std::string& s,
 
 bool cmState::IsCacheEntryType(std::string const& key)
 {
-  for (const std::string& i : cmCacheEntryTypes) {
-    if (key == i) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(
+    cmCacheEntryTypes.begin(), cmCacheEntryTypes.end(),
+    [&key](std::string const& i) -> bool { return key == i; });
 }
 
 bool cmState::LoadCache(const std::string& path, bool internal,
@@ -289,6 +288,7 @@ cmStateSnapshot cmState::Reset()
     it->LinkDirectoriesBacktraces.clear();
     it->DirectoryEnd = pos;
     it->NormalTargetNames.clear();
+    it->ImportedTargetNames.clear();
     it->Properties.Clear();
     it->Children.clear();
   }
@@ -347,7 +347,7 @@ cmPropertyDefinition const* cmState::GetPropertyDefinition(
 bool cmState::IsPropertyChained(const std::string& name,
                                 cmProperty::ScopeType scope) const
 {
-  if (auto def = this->GetPropertyDefinition(name, scope)) {
+  if (const auto* def = this->GetPropertyDefinition(name, scope)) {
     return def->IsChained();
   }
   return false;
@@ -381,16 +381,6 @@ void cmState::SetEnabledLanguages(std::vector<std::string> const& langs)
 void cmState::ClearEnabledLanguages()
 {
   this->EnabledLanguages.clear();
-}
-
-bool cmState::GetIsInTryCompile() const
-{
-  return this->IsInTryCompile;
-}
-
-void cmState::SetIsInTryCompile(bool b)
-{
-  this->IsInTryCompile = b;
 }
 
 bool cmState::GetIsGeneratorMultiConfig() const
@@ -483,7 +473,7 @@ void cmState::AddDisallowedCommand(std::string const& name,
 
 void cmState::AddUnexpectedCommand(std::string const& name, const char* error)
 {
-  this->AddFlowControlCommand(
+  this->AddBuiltinCommand(
     name,
     [name, error](std::vector<cmListFileArgument> const&,
                   cmExecutionStatus& status) -> bool {
@@ -496,6 +486,13 @@ void cmState::AddUnexpectedCommand(std::string const& name, const char* error)
       status.SetError(error);
       return false;
     });
+}
+
+void cmState::AddUnexpectedFlowControlCommand(std::string const& name,
+                                              const char* error)
+{
+  this->FlowControlCommands.insert(name);
+  this->AddUnexpectedCommand(name, error);
 }
 
 bool cmState::AddScriptedCommand(std::string const& name, BT<Command> command,
@@ -524,7 +521,7 @@ bool cmState::AddScriptedCommand(std::string const& name, BT<Command> command,
 
 cmState::Command cmState::GetCommand(std::string const& name) const
 {
-  return GetCommandByExactName(cmSystemTools::LowerCase(name));
+  return this->GetCommandByExactName(cmSystemTools::LowerCase(name));
 }
 
 cmState::Command cmState::GetCommandByExactName(std::string const& name) const
@@ -588,8 +585,9 @@ cmProp cmState::GetGlobalProperty(const std::string& prop)
     std::vector<std::string> commands = this->GetCommandNames();
     this->SetGlobalProperty("COMMANDS", cmJoin(commands, ";").c_str());
   } else if (prop == "IN_TRY_COMPILE") {
-    this->SetGlobalProperty("IN_TRY_COMPILE",
-                            this->IsInTryCompile ? "1" : "0");
+    this->SetGlobalProperty(
+      "IN_TRY_COMPILE",
+      this->StateProjectKind == ProjectKind::TryCompile ? "1" : "0");
   } else if (prop == "GENERATOR_IS_MULTI_CONFIG") {
     this->SetGlobalProperty("GENERATOR_IS_MULTI_CONFIG",
                             this->IsGeneratorMultiConfig ? "1" : "0");
@@ -766,17 +764,12 @@ unsigned int cmState::GetCacheMinorVersion() const
 
 cmState::Mode cmState::GetMode() const
 {
-  return this->CurrentMode;
+  return this->StateMode;
 }
 
 std::string cmState::GetModeString() const
 {
-  return ModeToString(this->CurrentMode);
-}
-
-void cmState::SetMode(cmState::Mode mode)
-{
-  this->CurrentMode = mode;
+  return ModeToString(this->StateMode);
 }
 
 std::string cmState::ModeToString(cmState::Mode mode)
@@ -796,6 +789,11 @@ std::string cmState::ModeToString(cmState::Mode mode)
       return "UNKNOWN";
   }
   return "UNKNOWN";
+}
+
+cmState::ProjectKind cmState::GetProjectKind() const
+{
+  return this->StateProjectKind;
 }
 
 std::string const& cmState::GetBinaryDirectory() const

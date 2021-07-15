@@ -39,15 +39,16 @@ the ``if``, ``elseif`` and :command:`while` clauses.
 
 Compound conditions are evaluated in the following order of precedence:
 Innermost parentheses are evaluated first. Next come unary tests such
-as ``EXISTS``, ``COMMAND``, and ``DEFINED``.  Then binary tests such as
-``EQUAL``, ``LESS``, ``LESS_EQUAL``, ``GREATER``, ``GREATER_EQUAL``,
-``STREQUAL``, ``STRLESS``, ``STRLESS_EQUAL``, ``STRGREATER``,
-``STRGREATER_EQUAL``, ``VERSION_EQUAL``, ``VERSION_LESS``,
-``VERSION_LESS_EQUAL``, ``VERSION_GREATER``, ``VERSION_GREATER_EQUAL``,
-and ``MATCHES``.  Then the boolean operators in the order ``NOT``,  ``AND``,
-and finally ``OR``.
+as `EXISTS`_, `COMMAND`_, and `DEFINED`_.  Then binary tests such as
+`EQUAL`_, `LESS`_, `LESS_EQUAL`_, `GREATER`_, `GREATER_EQUAL`_,
+`STREQUAL`_, `STRLESS`_, `STRLESS_EQUAL`_, `STRGREATER`_,
+`STRGREATER_EQUAL`_, `VERSION_EQUAL`_, `VERSION_LESS`_,
+`VERSION_LESS_EQUAL`_, `VERSION_GREATER`_, `VERSION_GREATER_EQUAL`_,
+and `MATCHES`_.  Then the boolean operators in the order `NOT`_,  `AND`_,
+and finally `OR`_.
 
-Possible conditions are:
+Basic Expressions
+"""""""""""""""""
 
 ``if(<constant>)``
  True if the constant is ``1``, ``ON``, ``YES``, ``TRUE``, ``Y``,
@@ -62,14 +63,34 @@ Possible conditions are:
  True if given a variable that is defined to a value that is not a false
  constant.  False otherwise.  (Note macro arguments are not variables.)
 
+Logic Operators
+"""""""""""""""
+
+.. _NOT:
+
 ``if(NOT <condition>)``
  True if the condition is not true.
+
+.. _AND:
 
 ``if(<cond1> AND <cond2>)``
  True if both conditions would be considered true individually.
 
+.. _OR:
+
 ``if(<cond1> OR <cond2>)``
  True if either condition would be considered true individually.
+
+``if((condition) AND (condition OR (condition)))``
+ The conditions inside the parenthesis are evaluated first and then
+ the remaining condition is evaluated as in the other examples.
+ Where there are nested parenthesis the innermost are evaluated as part
+ of evaluating the condition that contains them.
+
+Existence Checks
+""""""""""""""""
+
+.. _COMMAND:
 
 ``if(COMMAND command-name)``
  True if the given name is a command, macro or function that can be
@@ -89,11 +110,31 @@ Possible conditions are:
   True if the given name is an existing test name created by the
   :command:`add_test` command.
 
+.. _DEFINED:
+
+``if(DEFINED <name>|CACHE{<name>}|ENV{<name>})``
+ True if a variable, cache variable or environment variable
+ with given ``<name>`` is defined. The value of the variable
+ does not matter. Note that macro arguments are not variables.
+
+ .. versionadded:: 3.14
+  Added support for ``CACHE{<name>}`` variables.
+
+``if(<variable|string> IN_LIST <variable>)``
+ .. versionadded:: 3.3
+  True if the given element is contained in the named list variable.
+
+File Operations
+"""""""""""""""
+
+.. _EXISTS:
+
 ``if(EXISTS path-to-file-or-directory)``
  True if the named file or directory exists.  Behavior is well-defined
- only for full paths. Resolves symbolic links, i.e. if the named file or
- directory is a symbolic link, returns true if the target of the
- symbolic link exists.
+ only for explicit full paths (a leading ``~/`` is not expanded as
+ a home directory and is considered a relative path).
+ Resolves symbolic links, i.e. if the named file or directory is a
+ symbolic link, returns true if the target of the symbolic link exists.
 
 ``if(file1 IS_NEWER_THAN file2)``
  True if ``file1`` is newer than ``file2`` or if one of the two files doesn't
@@ -112,7 +153,21 @@ Possible conditions are:
  only for full paths.
 
 ``if(IS_ABSOLUTE path)``
- True if the given path is an absolute path.
+ True if the given path is an absolute path.  Note the following special
+ cases:
+
+ * An empty ``path`` evaluates to false.
+ * On Windows hosts, any ``path`` that begins with a drive letter and colon
+   (e.g. ``C:``), a forward slash or a backslash will evaluate to true.
+   This means a path like ``C:no\base\dir`` will evaluate to true, even
+   though the non-drive part of the path is relative.
+ * On non-Windows hosts, any ``path`` that begins with a tilde (``~``)
+   evaluates to true.
+
+Comparisons
+"""""""""""
+
+.. _MATCHES:
 
 ``if(<variable|string> MATCHES regex)``
  True if the given string or variable's value matches the given regular
@@ -121,49 +176,74 @@ Possible conditions are:
  .. versionadded:: 3.9
   ``()`` groups are captured in :variable:`CMAKE_MATCH_<n>` variables.
 
+.. _LESS:
+
 ``if(<variable|string> LESS <variable|string>)``
  True if the given string or variable's value is a valid number and less
  than that on the right.
+
+.. _GREATER:
 
 ``if(<variable|string> GREATER <variable|string>)``
  True if the given string or variable's value is a valid number and greater
  than that on the right.
 
+.. _EQUAL:
+
 ``if(<variable|string> EQUAL <variable|string>)``
  True if the given string or variable's value is a valid number and equal
  to that on the right.
+
+.. _LESS_EQUAL:
 
 ``if(<variable|string> LESS_EQUAL <variable|string>)``
  .. versionadded:: 3.7
   True if the given string or variable's value is a valid number and less
   than or equal to that on the right.
 
+.. _GREATER_EQUAL:
+
 ``if(<variable|string> GREATER_EQUAL <variable|string>)``
  .. versionadded:: 3.7
   True if the given string or variable's value is a valid number and greater
   than or equal to that on the right.
 
+.. _STRLESS:
+
 ``if(<variable|string> STRLESS <variable|string>)``
  True if the given string or variable's value is lexicographically less
  than the string or variable on the right.
+
+.. _STRGREATER:
 
 ``if(<variable|string> STRGREATER <variable|string>)``
  True if the given string or variable's value is lexicographically greater
  than the string or variable on the right.
 
+.. _STREQUAL:
+
 ``if(<variable|string> STREQUAL <variable|string>)``
  True if the given string or variable's value is lexicographically equal
  to the string or variable on the right.
+
+.. _STRLESS_EQUAL:
 
 ``if(<variable|string> STRLESS_EQUAL <variable|string>)``
  .. versionadded:: 3.7
   True if the given string or variable's value is lexicographically less
   than or equal to the string or variable on the right.
 
+.. _STRGREATER_EQUAL:
+
 ``if(<variable|string> STRGREATER_EQUAL <variable|string>)``
  .. versionadded:: 3.7
   True if the given string or variable's value is lexicographically greater
   than or equal to the string or variable on the right.
+
+Version Comparisons
+"""""""""""""""""""
+
+.. _VERSION_LESS:
 
 ``if(<variable|string> VERSION_LESS <variable|string>)``
  Component-wise integer version number comparison (version format is
@@ -171,17 +251,23 @@ Possible conditions are:
  Any non-integer version component or non-integer trailing part of a version
  component effectively truncates the string at that point.
 
+.. _VERSION_GREATER:
+
 ``if(<variable|string> VERSION_GREATER <variable|string>)``
  Component-wise integer version number comparison (version format is
  ``major[.minor[.patch[.tweak]]]``, omitted components are treated as zero).
  Any non-integer version component or non-integer trailing part of a version
  component effectively truncates the string at that point.
 
+.. _VERSION_EQUAL:
+
 ``if(<variable|string> VERSION_EQUAL <variable|string>)``
  Component-wise integer version number comparison (version format is
  ``major[.minor[.patch[.tweak]]]``, omitted components are treated as zero).
  Any non-integer version component or non-integer trailing part of a version
  component effectively truncates the string at that point.
+
+.. _VERSION_LESS_EQUAL:
 
 ``if(<variable|string> VERSION_LESS_EQUAL <variable|string>)``
  .. versionadded:: 3.7
@@ -190,30 +276,14 @@ Possible conditions are:
   Any non-integer version component or non-integer trailing part of a version
   component effectively truncates the string at that point.
 
+.. _VERSION_GREATER_EQUAL:
+
 ``if(<variable|string> VERSION_GREATER_EQUAL <variable|string>)``
  .. versionadded:: 3.7
   Component-wise integer version number comparison (version format is
   ``major[.minor[.patch[.tweak]]]``, omitted components are treated as zero).
   Any non-integer version component or non-integer trailing part of a version
   component effectively truncates the string at that point.
-
-``if(<variable|string> IN_LIST <variable>)``
- .. versionadded:: 3.3
-  True if the given element is contained in the named list variable.
-
-``if(DEFINED <name>|CACHE{<name>}|ENV{<name>})``
- True if a variable, cache variable or environment variable
- with given ``<name>`` is defined. The value of the variable
- does not matter. Note that macro arguments are not variables.
-
- .. versionadded:: 3.14
-  Added support for ``CACHE{<name>}`` variables.
-
-``if((condition) AND (condition OR (condition)))``
- The conditions inside the parenthesis are evaluated first and then
- the remaining condition is evaluated as in the previous examples.
- Where there are nested parenthesis the innermost are evaluated as part
- of evaluating the condition that contains them.
 
 Variable Expansion
 ^^^^^^^^^^^^^^^^^^

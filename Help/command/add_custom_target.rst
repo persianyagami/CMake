@@ -54,6 +54,12 @@ The options are:
   The :ref:`Makefile Generators` will remove ``BYPRODUCTS`` and other
   :prop_sf:`GENERATED` files during ``make clean``.
 
+  .. versionadded:: 3.20
+    Arguments to ``BYPRODUCTS`` may use a restricted set of
+    :manual:`generator expressions <cmake-generator-expressions(7)>`.
+    :ref:`Target-dependent expressions <Target-Dependent Queries>` are not
+    permitted.
+
 ``COMMAND``
   Specify the command-line(s) to execute at build time.
   If more than one ``COMMAND`` is specified they will be executed in order,
@@ -80,8 +86,8 @@ The options are:
 
   Arguments to ``COMMAND`` may use
   :manual:`generator expressions <cmake-generator-expressions(7)>`.
-  Use the ``TARGET_FILE`` generator expression to refer to the location of
-  a target later in the command line (i.e. as a command argument rather
+  Use the :genex:`TARGET_FILE` generator expression to refer to the location
+  of a target later in the command line (i.e. as a command argument rather
   than as the command to execute).
 
   Whenever one of the following target based generator expressions are used as
@@ -164,3 +170,12 @@ The options are:
   .. versionadded:: 3.13
     Arguments to ``WORKING_DIRECTORY`` may use
     :manual:`generator expressions <cmake-generator-expressions(7)>`.
+
+Ninja Multi-Config
+^^^^^^^^^^^^^^^^^^
+
+.. versionadded:: 3.20
+
+  ``add_custom_target`` supports the :generator:`Ninja Multi-Config`
+  generator's cross-config capabilities. See the generator documentation
+  for more information.

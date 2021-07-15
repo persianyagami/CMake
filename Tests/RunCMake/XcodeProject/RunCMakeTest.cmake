@@ -3,6 +3,8 @@ include(RunCMake)
 run_cmake(ExplicitCMakeLists)
 run_cmake(ImplicitCMakeLists)
 run_cmake(InterfaceLibSources)
+run_cmake_with_options(SearchPaths -DCMAKE_CONFIGURATION_TYPES=Debug)
+run_cmake(InheritedParameters)
 
 run_cmake(XcodeFileType)
 run_cmake(XcodeAttributeLocation)
@@ -235,7 +237,7 @@ if(NOT XCODE_VERSION VERSION_LESS 7)
   unset(RunCMake_TEST_OPTIONS)
 endif()
 
-if(XCODE_VERSION VERSION_GREATER_EQUAL 6 AND XCODE_VERSION VERSION_LESS 12)
+if(XCODE_VERSION VERSION_GREATER_EQUAL 6)
   # XcodeIOSInstallCombined
   set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/XcodeIOSInstallCombined-build)
   set(RunCMake_TEST_NO_CLEAN 1)
@@ -249,7 +251,14 @@ if(XCODE_VERSION VERSION_GREATER_EQUAL 6 AND XCODE_VERSION VERSION_LESS 12)
 
   run_cmake(XcodeIOSInstallCombined)
   run_cmake_command(XcodeIOSInstallCombined-build ${CMAKE_COMMAND} --build .)
-  run_cmake_command(XcodeIOSInstallCombined-install ${CMAKE_COMMAND} --build . --target install)
+  if(XCODE_VERSION VERSION_LESS 12)
+    run_cmake_command(XcodeIOSInstallCombined-install ${CMAKE_COMMAND} --build . --target install)
+  endif()
+  # --build defaults to Debug, --install defaults to Release, so we have to
+  # specify the configuration explicitly
+  run_cmake_command(XcodeIOSInstallCombined-cmakeinstall
+    ${CMAKE_COMMAND} --install . --config Debug
+  )
 
   unset(RunCMake_TEST_BINARY_DIR)
   unset(RunCMake_TEST_NO_CLEAN)
@@ -268,7 +277,14 @@ if(XCODE_VERSION VERSION_GREATER_EQUAL 6 AND XCODE_VERSION VERSION_LESS 12)
 
   run_cmake(XcodeIOSInstallCombinedPrune)
   run_cmake_command(XcodeIOSInstallCombinedPrune-build ${CMAKE_COMMAND} --build .)
-  run_cmake_command(XcodeIOSInstallCombinedPrune-install ${CMAKE_COMMAND} --build . --target install)
+  if(XCODE_VERSION VERSION_LESS 12)
+    run_cmake_command(XcodeIOSInstallCombinedPrune-install ${CMAKE_COMMAND} --build . --target install)
+  endif()
+  # --build defaults to Debug, --install defaults to Release, so we have to
+  # specify the configuration explicitly
+  run_cmake_command(XcodeIOSInstallCombinedPrune-cmakeinstall
+    ${CMAKE_COMMAND} --install . --config Debug
+  )
 
   unset(RunCMake_TEST_BINARY_DIR)
   unset(RunCMake_TEST_NO_CLEAN)
@@ -287,7 +303,14 @@ if(XCODE_VERSION VERSION_GREATER_EQUAL 6 AND XCODE_VERSION VERSION_LESS 12)
 
   run_cmake(XcodeIOSInstallCombinedSingleArch)
   run_cmake_command(XcodeIOSInstallCombinedSingleArch-build ${CMAKE_COMMAND} --build .)
-  run_cmake_command(XcodeIOSInstallCombinedSingleArch-install ${CMAKE_COMMAND} --build . --target install)
+  if(XCODE_VERSION VERSION_LESS 12)
+    run_cmake_command(XcodeIOSInstallCombinedSingleArch-install ${CMAKE_COMMAND} --build . --target install)
+  endif()
+  # --build defaults to Debug, --install defaults to Release, so we have to
+  # specify the configuration explicitly
+  run_cmake_command(XcodeIOSInstallCombinedSingleArch-cmakeinstall
+    ${CMAKE_COMMAND} --install . --config Debug
+  )
 
   unset(RunCMake_TEST_BINARY_DIR)
   unset(RunCMake_TEST_NO_CLEAN)
@@ -364,5 +387,31 @@ if(XCODE_VERSION VERSION_GREATER_EQUAL 8)
 
   XcodeRemoveExcessiveISystemSDK(iphoneos)
   XcodeRemoveExcessiveISystemSDK(iphonesimulator)
+endif()
+
+if (XCODE_VERSION VERSION_GREATER_EQUAL 7.3)
+  function(xctest_add_bundle_test SystemName SDK BuildSystemVersion ExpectedOutputDir)
+    set(RunCMake_TEST_BINARY_DIR
+      ${RunCMake_BINARY_DIR}/DeploymentTarget-${SystemName}-${SDK}-${BuildSystemVersion}-build)
+    set(RunCMake_TEST_OPTIONS
+      "-DCMAKE_SYSTEM_NAME=${SystemName}"
+      "-DCMAKE_OSX_SYSROOT=${SDK}"
+      "-DTEST_EXPECTED_OUTPUT_DIR=${ExpectedOutputDir}")
+    unset(RunCMake_GENERATOR_TOOLSET)
+    if(BuildSystemVersion)
+      set(RunCMake_GENERATOR_TOOLSET "buildsystem=${BuildSystemVersion}")
+    endif()
+    run_cmake(XCTestAddBundle)
+  endfunction()
+
+  if(XCODE_VERSION VERSION_GREATER_EQUAL 12)
+    xctest_add_bundle_test(Darwin macosx "1" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>/PlugIns")
+    xctest_add_bundle_test(Darwin macosx "12" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>/PlugIns")
+    xctest_add_bundle_test(iOS iphoneos "1" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>/PlugIns")
+    xctest_add_bundle_test(iOS iphoneos "12" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>")
+  else()
+    xctest_add_bundle_test(Darwin macosx "" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>/PlugIns")
+    xctest_add_bundle_test(iOS iphoneos "" "$<TARGET_BUNDLE_CONTENT_DIR:TestedApp>/PlugIns")
+  endif()
 endif()
 # Please add macOS-only tests above before the device-specific tests.

@@ -6,9 +6,12 @@
 #include <cctype>
 #include <cstdio>
 #include <sstream>
+#include <utility>
 
 #include <cm/iterator>
 #include <cm/memory>
+#include <cm/optional>
+#include <cm/string_view>
 #include <cmext/algorithm>
 #include <cmext/memory>
 
@@ -55,6 +58,52 @@ std::string const cmGlobalNinjaGenerator::SHELL_NOOP = "cd .";
 #else
 std::string const cmGlobalNinjaGenerator::SHELL_NOOP = ":";
 #endif
+
+bool operator==(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return lhs.Target == rhs.Target && lhs.Config == rhs.Config &&
+    lhs.GenexOutput == rhs.GenexOutput;
+}
+
+bool operator!=(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return !(lhs == rhs);
+}
+
+bool operator<(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return lhs.Target < rhs.Target ||
+    (lhs.Target == rhs.Target &&
+     (lhs.Config < rhs.Config ||
+      (lhs.Config == rhs.Config && lhs.GenexOutput < rhs.GenexOutput)));
+}
+
+bool operator>(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return rhs < lhs;
+}
+
+bool operator<=(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return !(lhs > rhs);
+}
+
+bool operator>=(
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& lhs,
+  const cmGlobalNinjaGenerator::ByConfig::TargetDependsClosureKey& rhs)
+{
+  return rhs <= lhs;
+}
 
 void cmGlobalNinjaGenerator::Indent(std::ostream& os, int count)
 {
@@ -136,7 +185,7 @@ std::string cmGlobalNinjaGenerator::EncodePath(const std::string& path)
   else
     std::replace(result.begin(), result.end(), '/', '\\');
 #endif
-  result = EncodeLiteral(result);
+  result = this->EncodeLiteral(result);
   cmSystemTools::ReplaceString(result, " ", "$ ");
   cmSystemTools::ReplaceString(result, ":", "$:");
   return result;
@@ -168,22 +217,41 @@ void cmGlobalNinjaGenerator::WriteBuild(std::ostream& os,
   {
     // Write explicit outputs
     for (std::string const& output : build.Outputs) {
-      buildStr += cmStrCat(' ', EncodePath(output));
+      buildStr = cmStrCat(buildStr, ' ', this->EncodePath(output));
       if (this->ComputingUnknownDependencies) {
         this->CombinedBuildOutputs.insert(output);
       }
     }
     // Write implicit outputs
     if (!build.ImplicitOuts.empty()) {
-      buildStr += " |";
+      // Assume Ninja is new enough to support implicit outputs.
+      // Callers should not populate this field otherwise.
+      buildStr = cmStrCat(buildStr, " |");
       for (std::string const& implicitOut : build.ImplicitOuts) {
-        buildStr += cmStrCat(' ', EncodePath(implicitOut));
+        buildStr = cmStrCat(buildStr, ' ', this->EncodePath(implicitOut));
+        if (this->ComputingUnknownDependencies) {
+          this->CombinedBuildOutputs.insert(implicitOut);
+        }
       }
     }
-    buildStr += ':';
+
+    // Repeat some outputs, but expressed as absolute paths.
+    // This helps Ninja handle absolute paths found in a depfile.
+    // FIXME: Unfortunately this causes Ninja to stat the file twice.
+    // We could avoid this if Ninja Issue 1251 were fixed.
+    if (!build.WorkDirOuts.empty()) {
+      if (this->SupportsImplicitOuts() && build.ImplicitOuts.empty()) {
+        // Make them implicit outputs if supported by this version of Ninja.
+        buildStr = cmStrCat(buildStr, " |");
+      }
+      for (std::string const& workdirOut : build.WorkDirOuts) {
+        buildStr = cmStrCat(buildStr, " ${cmake_ninja_workdir}",
+                            this->EncodePath(workdirOut));
+      }
+    }
 
     // Write the rule.
-    buildStr += cmStrCat(' ', build.Rule);
+    buildStr = cmStrCat(buildStr, ": ", build.Rule);
   }
 
   std::string arguments;
@@ -192,14 +260,14 @@ void cmGlobalNinjaGenerator::WriteBuild(std::ostream& os,
 
     // Write explicit dependencies.
     for (std::string const& explicitDep : build.ExplicitDeps) {
-      arguments += cmStrCat(' ', EncodePath(explicitDep));
+      arguments += cmStrCat(' ', this->EncodePath(explicitDep));
     }
 
     // Write implicit dependencies.
     if (!build.ImplicitDeps.empty()) {
       arguments += " |";
       for (std::string const& implicitDep : build.ImplicitDeps) {
-        arguments += cmStrCat(' ', EncodePath(implicitDep));
+        arguments += cmStrCat(' ', this->EncodePath(implicitDep));
       }
     }
 
@@ -207,7 +275,7 @@ void cmGlobalNinjaGenerator::WriteBuild(std::ostream& os,
     if (!build.OrderOnlyDeps.empty()) {
       arguments += " ||";
       for (std::string const& orderOnlyDep : build.OrderOnlyDeps) {
-        arguments += cmStrCat(' ', EncodePath(orderOnlyDep));
+        arguments += cmStrCat(' ', this->EncodePath(orderOnlyDep));
       }
     }
 
@@ -259,21 +327,46 @@ void cmGlobalNinjaGenerator::AddCustomCommandRule()
   this->AddRule(rule);
 }
 
+void cmGlobalNinjaGenerator::CCOutputs::Add(
+  std::vector<std::string> const& paths)
+{
+  for (std::string const& path : paths) {
+    std::string out = this->GG->ConvertToNinjaPath(path);
+    if (!cmSystemTools::FileIsFullPath(out)) {
+      // This output is expressed as a relative path.  Repeat it,
+      // but expressed as an absolute path for Ninja Issue 1251.
+      this->WorkDirOuts.emplace_back(out);
+      this->GG->SeenCustomCommandOutput(this->GG->ConvertToNinjaAbsPath(path));
+    }
+    this->GG->SeenCustomCommandOutput(out);
+    this->ExplicitOuts.emplace_back(std::move(out));
+  }
+}
+
 void cmGlobalNinjaGenerator::WriteCustomCommandBuild(
-  const std::string& command, const std::string& description,
-  const std::string& comment, const std::string& depfile,
-  const std::string& job_pool, bool uses_terminal, bool restat,
-  const cmNinjaDeps& outputs, const std::string& config,
-  const cmNinjaDeps& explicitDeps, const cmNinjaDeps& orderOnlyDeps)
+  std::string const& command, std::string const& description,
+  std::string const& comment, std::string const& depfile,
+  std::string const& job_pool, bool uses_terminal, bool restat,
+  std::string const& config, CCOutputs outputs, cmNinjaDeps explicitDeps,
+  cmNinjaDeps orderOnlyDeps)
 {
   this->AddCustomCommandRule();
+
+  if (this->ComputingUnknownDependencies) {
+    // we need to track every dependency that comes in, since we are trying
+    // to find dependencies that are side effects of build commands
+    for (std::string const& dep : explicitDeps) {
+      this->CombinedCustomCommandExplicitDependencies.insert(dep);
+    }
+  }
 
   {
     cmNinjaBuild build("CUSTOM_COMMAND");
     build.Comment = comment;
-    build.Outputs = outputs;
-    build.ExplicitDeps = explicitDeps;
-    build.OrderOnlyDeps = orderOnlyDeps;
+    build.Outputs = std::move(outputs.ExplicitOuts);
+    build.WorkDirOuts = std::move(outputs.WorkDirOuts);
+    build.ExplicitDeps = std::move(explicitDeps);
+    build.OrderOnlyDeps = std::move(orderOnlyDeps);
 
     cmNinjaVars& vars = build.Variables;
     {
@@ -285,11 +378,11 @@ void cmGlobalNinjaGenerator::WriteCustomCommandBuild(
 #endif
       vars["COMMAND"] = std::move(cmd);
     }
-    vars["DESC"] = EncodeLiteral(description);
+    vars["DESC"] = this->EncodeLiteral(description);
     if (restat) {
       vars["restat"] = "1";
     }
-    if (uses_terminal && SupportsConsolePool()) {
+    if (uses_terminal && this->SupportsDirectConsole()) {
       vars["pool"] = "console";
     } else if (!job_pool.empty()) {
       vars["pool"] = job_pool;
@@ -303,20 +396,12 @@ void cmGlobalNinjaGenerator::WriteCustomCommandBuild(
       this->WriteBuild(*this->GetImplFileStream(config), build);
     }
   }
-
-  if (this->ComputingUnknownDependencies) {
-    // we need to track every dependency that comes in, since we are trying
-    // to find dependencies that are side effects of build commands
-    for (std::string const& dep : explicitDeps) {
-      this->CombinedCustomCommandExplicitDependencies.insert(dep);
-    }
-  }
 }
 
 void cmGlobalNinjaGenerator::AddMacOSXContentRule()
 {
   cmNinjaRule rule("COPY_OSX_CONTENT");
-  rule.Command = cmStrCat(CMakeCmd(), " -E copy $in $out");
+  rule.Command = cmStrCat(this->CMakeCmd(), " -E copy $in $out");
   rule.Description = "Copying OS X Content $out";
   rule.Comment = "Rule for copying OS X bundle content file.";
   this->AddRule(rule);
@@ -457,14 +542,7 @@ std::unique_ptr<cmLocalGenerator> cmGlobalNinjaGenerator::CreateLocalGenerator(
 
 codecvt::Encoding cmGlobalNinjaGenerator::GetMakefileEncoding() const
 {
-#ifdef _WIN32
-  // Ninja on Windows does not support non-ANSI characters.
-  // https://github.com/ninja-build/ninja/issues/1195
-  return codecvt::ANSI;
-#else
-  // No encoding conversion needed on other platforms.
-  return codecvt::None;
-#endif
+  return this->NinjaExpectedEncoding;
 }
 
 void cmGlobalNinjaGenerator::GetDocumentation(cmDocumentationEntry& entry)
@@ -509,6 +587,7 @@ void cmGlobalNinjaGenerator::Generate()
   this->TargetAll = this->NinjaOutputPath("all");
   this->CMakeCacheFile = this->NinjaOutputPath("CMakeCache.txt");
   this->DisableCleandead = false;
+  this->DiagnosedCxxModuleSupport = false;
 
   this->PolicyCMP0058 =
     this->LocalGenerators[0]->GetMakefile()->GetPolicyStatus(
@@ -582,24 +661,16 @@ void cmGlobalNinjaGenerator::CleanMetaData()
 
   // Skip some ninja tools if they need 'build.ninja' but it is missing.
   bool const missingBuildManifest = expectBuildManifest &&
-    (this->NinjaSupportsCleanDeadTool ||
-     this->NinjaSupportsUnconditionalRecompactTool) &&
+    this->NinjaSupportsUnconditionalRecompactTool &&
     !cmSystemTools::FileExists("build.ninja");
 
-  // The `cleandead` tool needs to know about all outputs in the build we just
-  // wrote out. Ninja-Multi doesn't have a single `build.ninja` we can use that
-  // is the union of all generated configurations, so we can't run it reliably
-  // in that case.
-  if (this->NinjaSupportsCleanDeadTool && !this->DisableCleandead &&
-      expectBuildManifest && !missingBuildManifest) {
-    run_ninja_tool({ "cleandead" });
-  }
   // The `recompact` tool loads the manifest. As above, we don't have a single
   // `build.ninja` to load for this in Ninja-Multi. This may be relaxed in the
   // future pending further investigation into how Ninja works upstream
   // (ninja#1721).
-  if (this->NinjaSupportsUnconditionalRecompactTool && expectBuildManifest &&
-      !missingBuildManifest) {
+  if (this->NinjaSupportsUnconditionalRecompactTool &&
+      !this->GetCMakeInstance()->GetRegenerateDuringBuild() &&
+      expectBuildManifest && !missingBuildManifest) {
     run_ninja_tool({ "recompact" });
   }
   if (this->NinjaSupportsRestatTool && this->OutputPathPrefix.empty()) {
@@ -680,9 +751,6 @@ void cmGlobalNinjaGenerator::CheckNinjaFeatures()
       }
     }
   }
-  this->NinjaSupportsCleanDeadTool = !cmSystemTools::VersionCompare(
-    cmSystemTools::OP_LESS, this->NinjaVersion.c_str(),
-    RequiredNinjaVersionForCleanDeadTool().c_str());
   this->NinjaSupportsUnconditionalRecompactTool =
     !cmSystemTools::VersionCompare(
       cmSystemTools::OP_LESS, this->NinjaVersion.c_str(),
@@ -696,6 +764,61 @@ void cmGlobalNinjaGenerator::CheckNinjaFeatures()
   this->NinjaSupportsMetadataOnRegeneration = !cmSystemTools::VersionCompare(
     cmSystemTools::OP_LESS, this->NinjaVersion.c_str(),
     RequiredNinjaVersionForMetadataOnRegeneration().c_str());
+#ifdef _WIN32
+  this->NinjaSupportsCodePage = !cmSystemTools::VersionCompare(
+    cmSystemTools::OP_LESS, this->NinjaVersion.c_str(),
+    RequiredNinjaVersionForCodePage().c_str());
+  if (this->NinjaSupportsCodePage) {
+    this->CheckNinjaCodePage();
+  } else {
+    this->NinjaExpectedEncoding = codecvt::ANSI;
+  }
+#endif
+}
+
+void cmGlobalNinjaGenerator::CheckNinjaCodePage()
+{
+  std::vector<std::string> command{ this->NinjaCommand, "-t", "wincodepage" };
+  std::string output;
+  std::string error;
+  int result;
+  if (!cmSystemTools::RunSingleCommand(command, &output, &error, &result,
+                                       nullptr, cmSystemTools::OUTPUT_NONE)) {
+    this->GetCMakeInstance()->IssueMessage(MessageType::FATAL_ERROR,
+                                           cmStrCat("Running\n '",
+                                                    cmJoin(command, "' '"),
+                                                    "'\n"
+                                                    "failed with:\n ",
+                                                    error));
+    cmSystemTools::SetFatalErrorOccured();
+  } else if (result == 0) {
+    std::istringstream outputStream(output);
+    std::string line;
+    bool found = false;
+    while (cmSystemTools::GetLineFromStream(outputStream, line)) {
+      if (cmHasLiteralPrefix(line, "Build file encoding: ")) {
+        cm::string_view lineView(line);
+        cm::string_view encoding =
+          lineView.substr(cmStrLen("Build file encoding: "));
+        if (encoding == "UTF-8") {
+          // Ninja expects UTF-8. We use that internally. No conversion needed.
+          this->NinjaExpectedEncoding = codecvt::None;
+        } else {
+          this->NinjaExpectedEncoding = codecvt::ANSI;
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      this->GetCMakeInstance()->IssueMessage(
+        MessageType::WARNING,
+        "Could not determine Ninja's code page, defaulting to UTF-8");
+      this->NinjaExpectedEncoding = codecvt::None;
+    }
+  } else {
+    this->NinjaExpectedEncoding = codecvt::ANSI;
+  }
 }
 
 bool cmGlobalNinjaGenerator::CheckLanguages(
@@ -721,6 +844,37 @@ bool cmGlobalNinjaGenerator::CheckLanguages(
   return true;
 }
 
+bool cmGlobalNinjaGenerator::CheckCxxModuleSupport()
+{
+  bool const diagnose = !this->DiagnosedCxxModuleSupport &&
+    !this->CMakeInstance->GetIsInTryCompile();
+  if (diagnose) {
+    this->DiagnosedCxxModuleSupport = true;
+    this->GetCMakeInstance()->IssueMessage(
+      MessageType::AUTHOR_WARNING,
+      "C++20 modules support via CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP "
+      "is experimental.  It is meant only for compiler developers to try.");
+  }
+  if (this->NinjaSupportsDyndeps) {
+    return true;
+  }
+  if (diagnose) {
+    std::ostringstream e;
+    /* clang-format off */
+    e <<
+      "The Ninja generator does not support C++20 modules "
+      "using Ninja version \n"
+      "  " << this->NinjaVersion << "\n"
+      "due to lack of required features.  "
+      "Ninja " << RequiredNinjaVersionForDyndeps() << " or higher is required."
+      ;
+    /* clang-format on */
+    this->GetCMakeInstance()->IssueMessage(MessageType::FATAL_ERROR, e.str());
+    cmSystemTools::SetFatalErrorOccured();
+  }
+  return false;
+}
+
 bool cmGlobalNinjaGenerator::CheckFortran(cmMakefile* mf) const
 {
   if (this->NinjaSupportsDyndeps) {
@@ -732,7 +886,8 @@ bool cmGlobalNinjaGenerator::CheckFortran(cmMakefile* mf) const
   e <<
     "The Ninja generator does not support Fortran using Ninja version\n"
     "  " << this->NinjaVersion << "\n"
-    "due to lack of required features.  Ninja 1.10 or higher is required."
+    "due to lack of required features.  "
+    "Ninja " << RequiredNinjaVersionForDyndeps() << " or higher is required."
     ;
   /* clang-format on */
   mf->IssueMessage(MessageType::FATAL_ERROR, e.str());
@@ -751,7 +906,9 @@ bool cmGlobalNinjaGenerator::CheckISPC(cmMakefile* mf) const
   e <<
     "The Ninja generator does not support ISPC using Ninja version\n"
     "  " << this->NinjaVersion << "\n"
-    "due to lack of required features.  Ninja 1.10 or higher is required."
+    "due to lack of required features.  "
+    "Ninja " << RequiredNinjaVersionForMultipleOutputs() <<
+    " or higher is required."
     ;
   /* clang-format on */
   mf->IssueMessage(MessageType::FATAL_ERROR, e.str());
@@ -763,14 +920,7 @@ void cmGlobalNinjaGenerator::EnableLanguage(
   std::vector<std::string> const& langs, cmMakefile* mf, bool optional)
 {
   if (this->IsMultiConfig()) {
-    if (!mf->GetDefinition("CMAKE_CONFIGURATION_TYPES")) {
-      mf->AddCacheDefinition(
-        "CMAKE_CONFIGURATION_TYPES", "Debug;Release;RelWithDebInfo",
-        "Semicolon separated list of supported configuration types, only "
-        "supports Debug, Release, MinSizeRel, and RelWithDebInfo, anything "
-        "else will be ignored",
-        cmStateEnums::STRING);
-    }
+    mf->InitCMAKE_CONFIGURATION_TYPES("Debug;Release;RelWithDebInfo");
   }
 
   this->cmGlobalGenerator::EnableLanguage(langs, mf, optional);
@@ -861,13 +1011,6 @@ bool cmGlobalNinjaGenerator::HasRule(const std::string& name)
 }
 
 // Private virtual overrides
-
-std::string cmGlobalNinjaGenerator::GetEditCacheCommand() const
-{
-  // Ninja by design does not run interactive tools in the terminal,
-  // so our only choice is cmake-gui.
-  return cmSystemTools::GetCMakeGUICommand();
-}
 
 void cmGlobalNinjaGenerator::ComputeTargetObjectDirectory(
   cmGeneratorTarget* gt) const
@@ -998,21 +1141,28 @@ static void EnsureTrailingSlash(std::string& path)
 std::string const& cmGlobalNinjaGenerator::ConvertToNinjaPath(
   const std::string& path) const
 {
-  auto const f = ConvertToNinjaPathCache.find(path);
-  if (f != ConvertToNinjaPathCache.end()) {
+  auto const f = this->ConvertToNinjaPathCache.find(path);
+  if (f != this->ConvertToNinjaPathCache.end()) {
     return f->second;
   }
 
-  const auto& ng =
-    cm::static_reference_cast<cmLocalNinjaGenerator>(this->LocalGenerators[0]);
-  std::string const& bin_dir = ng.GetState()->GetBinaryDirectory();
-  std::string convPath = ng.MaybeConvertToRelativePath(bin_dir, path);
+  std::string convPath =
+    this->LocalGenerators[0]->MaybeRelativeToTopBinDir(path);
   convPath = this->NinjaOutputPath(convPath);
 #ifdef _WIN32
   std::replace(convPath.begin(), convPath.end(), '/', '\\');
 #endif
-  return ConvertToNinjaPathCache.emplace(path, std::move(convPath))
+  return this->ConvertToNinjaPathCache.emplace(path, std::move(convPath))
     .first->second;
+}
+
+std::string cmGlobalNinjaGenerator::ConvertToNinjaAbsPath(
+  std::string path) const
+{
+#ifdef _WIN32
+  std::replace(path.begin(), path.end(), '/', '\\');
+#endif
+  return path;
 }
 
 void cmGlobalNinjaGenerator::AddAdditionalCleanFile(std::string fileName,
@@ -1080,15 +1230,18 @@ void cmGlobalNinjaGenerator::WriteDisclaimer(std::ostream& os) const
 void cmGlobalNinjaGenerator::WriteAssumedSourceDependencies()
 {
   for (auto const& asd : this->AssumedSourceDependencies) {
+    CCOutputs outputs(this);
+    outputs.ExplicitOuts.emplace_back(asd.first);
     cmNinjaDeps orderOnlyDeps;
     std::copy(asd.second.begin(), asd.second.end(),
               std::back_inserter(orderOnlyDeps));
-    WriteCustomCommandBuild(/*command=*/"", /*description=*/"",
-                            "Assume dependencies for generated source file.",
-                            /*depfile*/ "", /*job_pool*/ "",
-                            /*uses_terminal*/ false,
-                            /*restat*/ true, cmNinjaDeps(1, asd.first), "",
-                            cmNinjaDeps(), orderOnlyDeps);
+    this->WriteCustomCommandBuild(
+      /*command=*/"", /*description=*/"",
+      "Assume dependencies for generated source file.",
+      /*depfile*/ "", /*job_pool*/ "",
+      /*uses_terminal*/ false,
+      /*restat*/ true, std::string(), outputs, cmNinjaDeps(),
+      std::move(orderOnlyDeps));
   }
 }
 
@@ -1113,7 +1266,7 @@ void cmGlobalNinjaGenerator::AppendTargetOutputs(
     case cmStateEnums::STATIC_LIBRARY:
     case cmStateEnums::MODULE_LIBRARY: {
       if (depends == DependOnTargetOrdering) {
-        outputs.push_back(OrderDependsTargetForTarget(target, config));
+        outputs.push_back(this->OrderDependsTargetForTarget(target, config));
         break;
       }
     }
@@ -1125,7 +1278,7 @@ void cmGlobalNinjaGenerator::AppendTargetOutputs(
     }
     case cmStateEnums::OBJECT_LIBRARY: {
       if (depends == DependOnTargetOrdering) {
-        outputs.push_back(OrderDependsTargetForTarget(target, config));
+        outputs.push_back(this->OrderDependsTargetForTarget(target, config));
         break;
       }
     }
@@ -1206,23 +1359,30 @@ void cmGlobalNinjaGenerator::AppendTargetDepends(
 
 void cmGlobalNinjaGenerator::AppendTargetDependsClosure(
   cmGeneratorTarget const* target, cmNinjaDeps& outputs,
-  const std::string& config)
+  const std::string& config, const std::string& fileConfig, bool genexOutput)
 {
   cmNinjaOuts outs;
-  this->AppendTargetDependsClosure(target, outs, config, true);
+  this->AppendTargetDependsClosure(target, outs, config, fileConfig,
+                                   genexOutput, true);
   cm::append(outputs, outs);
 }
 
 void cmGlobalNinjaGenerator::AppendTargetDependsClosure(
   cmGeneratorTarget const* target, cmNinjaOuts& outputs,
-  const std::string& config, bool omit_self)
+  const std::string& config, const std::string& fileConfig, bool genexOutput,
+  bool omit_self)
 {
 
   // try to locate the target in the cache
-  auto find = this->Configs[config].TargetDependsClosures.lower_bound(target);
+  ByConfig::TargetDependsClosureKey key{
+    target,
+    config,
+    genexOutput,
+  };
+  auto find = this->Configs[fileConfig].TargetDependsClosures.lower_bound(key);
 
-  if (find == this->Configs[config].TargetDependsClosures.end() ||
-      find->first != target) {
+  if (find == this->Configs[fileConfig].TargetDependsClosures.end() ||
+      find->first != key) {
     // We now calculate the closure outputs by inspecting the dependent
     // targets recursively.
     // For that we have to distinguish between a local result set that is only
@@ -1232,18 +1392,27 @@ void cmGlobalNinjaGenerator::AppendTargetDependsClosure(
     cmNinjaOuts this_outs; // this will be the new cache entry
 
     for (auto const& dep_target : this->GetTargetDirectDepends(target)) {
-      if (!dep_target->IsInBuildSystem() ||
-          (target->GetType() != cmStateEnums::UTILITY &&
-           dep_target->GetType() != cmStateEnums::UTILITY &&
-           this->EnableCrossConfigBuild() && !dep_target.IsCross())) {
+      if (!dep_target->IsInBuildSystem()) {
         continue;
       }
 
-      // Collect the dependent targets for _this_ target
-      this->AppendTargetDependsClosure(dep_target, this_outs, config, false);
+      if (!this->IsSingleConfigUtility(target) &&
+          !this->IsSingleConfigUtility(dep_target) &&
+          this->EnableCrossConfigBuild() && !dep_target.IsCross() &&
+          !genexOutput) {
+        continue;
+      }
+
+      if (dep_target.IsCross()) {
+        this->AppendTargetDependsClosure(dep_target, this_outs, fileConfig,
+                                         fileConfig, genexOutput, false);
+      } else {
+        this->AppendTargetDependsClosure(dep_target, this_outs, config,
+                                         fileConfig, genexOutput, false);
+      }
     }
-    find = this->Configs[config].TargetDependsClosures.emplace_hint(
-      find, target, std::move(this_outs));
+    find = this->Configs[fileConfig].TargetDependsClosures.emplace_hint(
+      find, key, std::move(this_outs));
   }
 
   // now fill the outputs of the final result from the newly generated cache
@@ -1426,7 +1595,7 @@ void cmGlobalNinjaGenerator::WriteFolderTargets(std::ostream& os)
       build.Outputs.front() = this->BuildAlias(buildDirAllTarget, config);
       configDeps.emplace_back(build.Outputs.front());
       for (DirectoryTarget::Target const& t : dt.Targets) {
-        if (!IsExcludedFromAllInConfig(t, config)) {
+        if (!this->IsExcludedFromAllInConfig(t, config)) {
           this->AppendTargetOutputs(t.GT, build.ExplicitDeps, config,
                                     DependOnTargetArtifact);
         }
@@ -1639,7 +1808,7 @@ void cmGlobalNinjaGenerator::WriteTargetRebuildManifest(std::ostream& os)
   {
     cmNinjaRule rule("RERUN_CMAKE");
     rule.Command =
-      cmStrCat(CMakeCmd(), " --regenerate-during-build -S",
+      cmStrCat(this->CMakeCmd(), " --regenerate-during-build -S",
                lg->ConvertToOutputFormat(lg->GetSourceDirectory(),
                                          cmOutputConverter::SHELL),
                " -B",
@@ -1664,7 +1833,7 @@ void cmGlobalNinjaGenerator::WriteTargetRebuildManifest(std::ostream& os)
 
   // Use 'console' pool to get non buffered output of the CMake re-run call
   // Available since Ninja 1.5
-  if (SupportsConsolePool()) {
+  if (this->SupportsDirectConsole()) {
     reBuild.Variables["pool"] = "console";
   }
 
@@ -1673,7 +1842,7 @@ void cmGlobalNinjaGenerator::WriteTargetRebuildManifest(std::ostream& os)
     {
       cmNinjaRule rule("VERIFY_GLOBS");
       rule.Command =
-        cmStrCat(CMakeCmd(), " -P ",
+        cmStrCat(this->CMakeCmd(), " -P ",
                  lg->ConvertToOutputFormat(cm->GetGlobVerifyScript(),
                                            cmOutputConverter::SHELL));
       rule.Description = "Re-checking globbed directories...";
@@ -1734,8 +1903,8 @@ void cmGlobalNinjaGenerator::WriteTargetRebuildManifest(std::ostream& os)
     build.Comment = "A missing CMake input file is not an error.";
     std::set_difference(std::make_move_iterator(reBuild.ImplicitDeps.begin()),
                         std::make_move_iterator(reBuild.ImplicitDeps.end()),
-                        CustomCommandOutputs.begin(),
-                        CustomCommandOutputs.end(),
+                        this->CustomCommandOutputs.begin(),
+                        this->CustomCommandOutputs.end(),
                         std::back_inserter(build.Outputs));
     this->WriteBuild(os, build);
   }
@@ -1758,7 +1927,7 @@ std::string cmGlobalNinjaGenerator::NinjaCmd() const
   return "ninja";
 }
 
-bool cmGlobalNinjaGenerator::SupportsConsolePool() const
+bool cmGlobalNinjaGenerator::SupportsDirectConsole() const
 {
   return this->NinjaSupportsConsolePool;
 }
@@ -1819,7 +1988,8 @@ bool cmGlobalNinjaGenerator::WriteTargetCleanAdditional(std::ostream& os)
         fout << "  file(REMOVE_RECURSE\n";
         for (std::string const& acf : it->second.AdditionalCleanFiles) {
           fout << "  "
-               << cmOutputConverter::EscapeForCMake(ConvertToNinjaPath(acf))
+               << cmOutputConverter::EscapeForCMake(
+                    this->ConvertToNinjaPath(acf))
                << '\n';
         }
         fout << "  )\n";
@@ -1834,7 +2004,7 @@ bool cmGlobalNinjaGenerator::WriteTargetCleanAdditional(std::ostream& os)
   {
     cmNinjaRule rule("CLEAN_ADDITIONAL");
     rule.Command = cmStrCat(
-      CMakeCmd(), " -DCONFIG=$CONFIG -P ",
+      this->CMakeCmd(), " -DCONFIG=$CONFIG -P ",
       lgr->ConvertToOutputFormat(this->NinjaOutputPath(cleanScriptRel),
                                  cmOutputConverter::SHELL));
     rule.Description = "Cleaning additional files...";
@@ -1851,13 +2021,13 @@ bool cmGlobalNinjaGenerator::WriteTargetCleanAdditional(std::ostream& os)
       build.Outputs.front() = this->BuildAlias(
         this->NinjaOutputPath(this->GetAdditionalCleanTargetName()), config);
       build.Variables["CONFIG"] = config;
-      WriteBuild(os, build);
+      this->WriteBuild(os, build);
     }
     if (this->IsMultiConfig()) {
       build.Outputs.front() =
         this->NinjaOutputPath(this->GetAdditionalCleanTargetName());
       build.Variables["CONFIG"] = "";
-      WriteBuild(os, build);
+      this->WriteBuild(os, build);
     }
   }
   // Return success
@@ -1867,13 +2037,13 @@ bool cmGlobalNinjaGenerator::WriteTargetCleanAdditional(std::ostream& os)
 void cmGlobalNinjaGenerator::WriteTargetClean(std::ostream& os)
 {
   // -- Additional clean target
-  bool additionalFiles = WriteTargetCleanAdditional(os);
+  bool additionalFiles = this->WriteTargetCleanAdditional(os);
 
   // -- Default clean target
   // Write rule
   {
     cmNinjaRule rule("CLEAN");
-    rule.Command = cmStrCat(NinjaCmd(), " $FILE_ARG -t clean $TARGETS");
+    rule.Command = cmStrCat(this->NinjaCmd(), " $FILE_ARG -t clean $TARGETS");
     rule.Description = "Cleaning all built files...";
     rule.Comment = "Rule for cleaning all built files.";
     WriteRule(*this->RulesFileStream, rule);
@@ -1974,13 +2144,13 @@ void cmGlobalNinjaGenerator::WriteTargetClean(std::ostream& os)
     build.Outputs.emplace_back(
       this->ConvertToNinjaPath(GetByproductsForCleanTargetName()));
     build.ExplicitDeps = this->ByproductsForCleanTarget;
-    WriteBuild(os, build);
+    this->WriteBuild(os, build);
 
     for (auto const& config : configs) {
       build.Outputs.front() = this->BuildAlias(
         this->ConvertToNinjaPath(GetByproductsForCleanTargetName()), config);
       build.ExplicitDeps = this->Configs[config].ByproductsForCleanTarget;
-      WriteBuild(os, build);
+      this->WriteBuild(os, build);
     }
   }
 }
@@ -1989,7 +2159,7 @@ void cmGlobalNinjaGenerator::WriteTargetHelp(std::ostream& os)
 {
   {
     cmNinjaRule rule("HELP");
-    rule.Command = cmStrCat(NinjaCmd(), " -t targets");
+    rule.Command = cmStrCat(this->NinjaCmd(), " -t targets");
     rule.Description = "All primary targets available:";
     rule.Comment = "Rule for printing all primary targets available.";
     WriteRule(*this->RulesFileStream, rule);
@@ -1998,7 +2168,7 @@ void cmGlobalNinjaGenerator::WriteTargetHelp(std::ostream& os)
     cmNinjaBuild build("HELP");
     build.Comment = "Print all primary targets available.";
     build.Outputs.push_back(this->NinjaOutputPath("help"));
-    WriteBuild(os, build);
+    this->WriteBuild(os, build);
   }
 }
 
@@ -2110,14 +2280,22 @@ Compilation of source files within a target is split into the following steps:
    (because the latter consumes the module).
 */
 
-static std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
+namespace {
+
+struct cmSourceInfo
+{
+  cmScanDepInfo ScanDep;
+  std::vector<std::string> Includes;
+};
+
+cm::optional<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
   std::string const& arg_tdi, std::string const& arg_pp);
+}
 
 int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
                               std::vector<std::string>::const_iterator argEnd)
 {
   std::string arg_tdi;
-  std::string arg_src;
   std::string arg_pp;
   std::string arg_dep;
   std::string arg_obj;
@@ -2126,8 +2304,6 @@ int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
   for (std::string const& arg : cmMakeRange(argBeg, argEnd)) {
     if (cmHasLiteralPrefix(arg, "--tdi=")) {
       arg_tdi = arg.substr(6);
-    } else if (cmHasLiteralPrefix(arg, "--src=")) {
-      arg_src = arg.substr(6);
     } else if (cmHasLiteralPrefix(arg, "--pp=")) {
       arg_pp = arg.substr(5);
     } else if (cmHasLiteralPrefix(arg, "--dep=")) {
@@ -2168,11 +2344,8 @@ int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
     cmSystemTools::Error("-E cmake_ninja_depends requires value for --lang=");
     return 1;
   }
-  if (arg_src.empty()) {
-    arg_src = cmStrCat("<", arg_obj, " input file>");
-  }
 
-  std::unique_ptr<cmSourceInfo> info;
+  cm::optional<cmSourceInfo> info;
   if (arg_lang == "Fortran") {
     info = cmcmd_cmake_ninja_depends_fortran(arg_tdi, arg_pp);
   } else {
@@ -2187,7 +2360,7 @@ int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
     return 1;
   }
 
-  info->PrimaryOutput = arg_obj;
+  info->ScanDep.PrimaryOutput = arg_obj;
 
   {
     cmGeneratedFileStream depfile(arg_dep);
@@ -2198,7 +2371,7 @@ int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
     depfile << "\n";
   }
 
-  if (!cmScanDepFormat_P1689_Write(arg_ddi, arg_src, *info)) {
+  if (!cmScanDepFormat_P1689_Write(arg_ddi, info->ScanDep)) {
     cmSystemTools::Error(
       cmStrCat("-E cmake_ninja_depends failed to write ", arg_ddi));
     return 1;
@@ -2206,11 +2379,16 @@ int cmcmd_cmake_ninja_depends(std::vector<std::string>::const_iterator argBeg,
   return 0;
 }
 
-std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
+namespace {
+
+cm::optional<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
   std::string const& arg_tdi, std::string const& arg_pp)
 {
+  cm::optional<cmSourceInfo> info;
   cmFortranCompiler fc;
   std::vector<std::string> includes;
+  std::string dir_top_bld;
+  std::string module_dir;
   {
     Json::Value tdio;
     Json::Value const& tdi = tdio;
@@ -2221,8 +2399,13 @@ std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
         cmSystemTools::Error(
           cmStrCat("-E cmake_ninja_depends failed to parse ", arg_tdi,
                    reader.getFormattedErrorMessages()));
-        return nullptr;
+        return info;
       }
+    }
+
+    dir_top_bld = tdi["dir-top-bld"].asString();
+    if (!dir_top_bld.empty() && !cmHasLiteralSuffix(dir_top_bld, "/")) {
+      dir_top_bld += '/';
     }
 
     Json::Value const& tdi_include_dirs = tdi["include-dirs"];
@@ -2230,6 +2413,12 @@ std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
       for (auto const& tdi_include_dir : tdi_include_dirs) {
         includes.push_back(tdi_include_dir.asString());
       }
+    }
+
+    Json::Value const& tdi_module_dir = tdi["module-dir"];
+    module_dir = tdi_module_dir.asString();
+    if (!module_dir.empty() && !cmHasLiteralSuffix(module_dir, "/")) {
+      module_dir += '/';
     }
 
     Json::Value const& tdi_compiler_id = tdi["compiler-id"];
@@ -2248,19 +2437,25 @@ std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
   if (!cmFortranParser_FilePush(&parser, arg_pp.c_str())) {
     cmSystemTools::Error(
       cmStrCat("-E cmake_ninja_depends failed to open ", arg_pp));
-    return nullptr;
+    return info;
   }
   if (cmFortran_yyparse(parser.Scanner) != 0) {
     // Failed to parse the file.
-    return nullptr;
+    return info;
   }
 
-  auto info = cm::make_unique<cmSourceInfo>();
+  info = cmSourceInfo();
   for (std::string const& provide : finfo.Provides) {
     cmSourceReqInfo src_info;
     src_info.LogicalName = provide;
-    src_info.CompiledModulePath = provide;
-    info->Provides.emplace_back(src_info);
+    if (!module_dir.empty()) {
+      std::string mod = cmStrCat(module_dir, provide);
+      if (!dir_top_bld.empty() && cmHasPrefix(mod, dir_top_bld)) {
+        mod = mod.substr(dir_top_bld.size());
+      }
+      src_info.CompiledModulePath = std::move(mod);
+    }
+    info->ScanDep.Provides.emplace_back(src_info);
   }
   for (std::string const& require : finfo.Requires) {
     // Require modules not provided in the same source.
@@ -2269,13 +2464,13 @@ std::unique_ptr<cmSourceInfo> cmcmd_cmake_ninja_depends_fortran(
     }
     cmSourceReqInfo src_info;
     src_info.LogicalName = require;
-    src_info.CompiledModulePath = require;
-    info->Requires.emplace_back(src_info);
+    info->ScanDep.Requires.emplace_back(src_info);
   }
   for (std::string const& include : finfo.Includes) {
     info->Includes.push_back(include);
   }
   return info;
+}
 }
 
 bool cmGlobalNinjaGenerator::WriteDyndepFile(
@@ -2284,24 +2479,24 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
   std::string const& arg_dd, std::vector<std::string> const& arg_ddis,
   std::string const& module_dir,
   std::vector<std::string> const& linked_target_dirs,
-  std::string const& arg_lang)
+  std::string const& arg_lang, std::string const& arg_modmapfmt)
 {
   // Setup path conversions.
   {
     cmStateSnapshot snapshot = this->GetCMakeInstance()->GetCurrentSnapshot();
     snapshot.GetDirectory().SetCurrentSource(dir_cur_src);
     snapshot.GetDirectory().SetCurrentBinary(dir_cur_bld);
-    snapshot.GetDirectory().SetRelativePathTopSource(dir_top_src.c_str());
-    snapshot.GetDirectory().SetRelativePathTopBinary(dir_top_bld.c_str());
     auto mfd = cm::make_unique<cmMakefile>(this, snapshot);
     auto lgd = this->CreateLocalGenerator(mfd.get());
+    lgd->SetRelativePathTopSource(dir_top_src);
+    lgd->SetRelativePathTopBinary(dir_top_bld);
     this->Makefiles.push_back(std::move(mfd));
     this->LocalGenerators.push_back(std::move(lgd));
   }
 
-  std::vector<cmSourceInfo> objects;
+  std::vector<cmScanDepInfo> objects;
   for (std::string const& arg_ddi : arg_ddis) {
-    cmSourceInfo info;
+    cmScanDepInfo info;
     if (!cmScanDepFormat_P1689_Parse(arg_ddi, &info)) {
       cmSystemTools::Error(
         cmStrCat("-E cmake_ninja_dyndep failed to parse ddi file ", arg_ddi));
@@ -2337,10 +2532,20 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
   // We do this after loading the modules provided by linked targets
   // in case we have one of the same name that must be preferred.
   Json::Value tm = Json::objectValue;
-  for (cmSourceInfo const& object : objects) {
+  for (cmScanDepInfo const& object : objects) {
     for (auto const& p : object.Provides) {
-      std::string const mod = cmStrCat(
-        module_dir, cmSystemTools::GetFilenameName(p.CompiledModulePath));
+      std::string mod;
+      if (!p.CompiledModulePath.empty()) {
+        // The scanner provided the path to the module file.
+        mod = p.CompiledModulePath;
+        if (!cmSystemTools::FileIsFullPath(mod)) {
+          // Treat relative to work directory (top of build tree).
+          mod = cmSystemTools::CollapseFullPath(mod, dir_top_bld);
+        }
+      } else {
+        // Assume the module file path matches the logical module name.
+        mod = cmStrCat(module_dir, p.LogicalName);
+      }
       mod_files[p.LogicalName] = mod;
       tm[p.LogicalName] = mod;
     }
@@ -2352,7 +2557,7 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
   {
     cmNinjaBuild build("dyndep");
     build.Outputs.emplace_back("");
-    for (cmSourceInfo const& object : objects) {
+    for (cmScanDepInfo const& object : objects) {
       build.Outputs[0] = this->ConvertToNinjaPath(object.PrimaryOutput);
       build.ImplicitOuts.clear();
       for (auto const& p : object.Provides) {
@@ -2369,6 +2574,48 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
       build.Variables.clear();
       if (!object.Provides.empty()) {
         build.Variables.emplace("restat", "1");
+      }
+
+      if (arg_modmapfmt.empty()) {
+        // nothing to do.
+      } else {
+        std::stringstream mm;
+        if (arg_modmapfmt == "gcc") {
+          // Documented in GCC's documentation. The format is a series of lines
+          // with a module name and the associated filename separated by
+          // spaces. The first line may use `$root` as the module name to
+          // specify a "repository root". That is used to anchor any relative
+          // paths present in the file (CMake should never generate any).
+
+          // Write the root directory to use for module paths.
+          mm << "$root .\n";
+
+          for (auto const& l : object.Provides) {
+            auto m = mod_files.find(l.LogicalName);
+            if (m != mod_files.end()) {
+              mm << l.LogicalName << " " << this->ConvertToNinjaPath(m->second)
+                 << "\n";
+            }
+          }
+          for (auto const& r : object.Requires) {
+            auto m = mod_files.find(r.LogicalName);
+            if (m != mod_files.end()) {
+              mm << r.LogicalName << " " << this->ConvertToNinjaPath(m->second)
+                 << "\n";
+            }
+          }
+        } else {
+          cmSystemTools::Error(
+            cmStrCat("-E cmake_ninja_dyndep does not understand the ",
+                     arg_modmapfmt, " module map format"));
+          return false;
+        }
+
+        // XXX(modmap): If changing this path construction, change
+        // `cmNinjaTargetGenerator::WriteObjectBuildStatements` to generate the
+        // corresponding file path.
+        cmGeneratedFileStream mmf(cmStrCat(object.PrimaryOutput, ".modmap"));
+        mmf << mm.str();
       }
 
       this->WriteBuild(ddf, build);
@@ -2394,6 +2641,7 @@ int cmcmd_cmake_ninja_dyndep(std::vector<std::string>::const_iterator argBeg,
   std::string arg_dd;
   std::string arg_lang;
   std::string arg_tdi;
+  std::string arg_modmapfmt;
   std::vector<std::string> arg_ddis;
   for (std::string const& arg : arg_full) {
     if (cmHasLiteralPrefix(arg, "--tdi=")) {
@@ -2402,6 +2650,8 @@ int cmcmd_cmake_ninja_dyndep(std::vector<std::string>::const_iterator argBeg,
       arg_lang = arg.substr(7);
     } else if (cmHasLiteralPrefix(arg, "--dd=")) {
       arg_dd = arg.substr(5);
+    } else if (cmHasLiteralPrefix(arg, "--modmapfmt=")) {
+      arg_modmapfmt = arg.substr(12);
     } else if (!cmHasLiteralPrefix(arg, "--") &&
                cmHasLiteralSuffix(arg, ".ddi")) {
       arg_ddis.push_back(arg);
@@ -2460,7 +2710,7 @@ int cmcmd_cmake_ninja_dyndep(std::vector<std::string>::const_iterator argBeg,
   if (!ggd ||
       !cm::static_reference_cast<cmGlobalNinjaGenerator>(ggd).WriteDyndepFile(
         dir_top_src, dir_top_bld, dir_cur_src, dir_cur_bld, arg_dd, arg_ddis,
-        module_dir, linked_target_dirs, arg_lang)) {
+        module_dir, linked_target_dirs, arg_lang, arg_modmapfmt)) {
     return 1;
   }
   return 0;
@@ -2488,6 +2738,13 @@ std::set<std::string> cmGlobalNinjaGenerator::GetCrossConfigs(
   auto result = this->CrossConfigs;
   result.insert(fileConfig);
   return result;
+}
+
+bool cmGlobalNinjaGenerator::IsSingleConfigUtility(
+  cmGeneratorTarget const* target) const
+{
+  return target->GetType() == cmStateEnums::UTILITY &&
+    !this->PerConfigUtilityTargets.count(target->GetName());
 }
 
 const char* cmGlobalNinjaMultiGenerator::NINJA_COMMON_FILE =
@@ -2536,33 +2793,35 @@ bool cmGlobalNinjaMultiGenerator::OpenBuildFileStreams()
     << "# This file contains build statements common to all "
        "configurations.\n\n";
 
-  for (auto const& config : this->Makefiles[0]->GetGeneratorConfigs(
-         cmMakefile::IncludeEmptyConfig)) {
-    // Open impl file.
-    if (!this->OpenFileStream(this->ImplFileStreams[config],
-                              GetNinjaImplFilename(config))) {
-      return false;
-    }
+  auto const& configs =
+    this->Makefiles[0]->GetGeneratorConfigs(cmMakefile::IncludeEmptyConfig);
+  return std::all_of(
+    configs.begin(), configs.end(), [this](std::string const& config) -> bool {
+      // Open impl file.
+      if (!this->OpenFileStream(this->ImplFileStreams[config],
+                                GetNinjaImplFilename(config))) {
+        return false;
+      }
 
-    // Write a comment about this file.
-    *this->ImplFileStreams[config]
-      << "# This file contains build statements specific to the \"" << config
-      << "\"\n# configuration.\n\n";
+      // Write a comment about this file.
+      *this->ImplFileStreams[config]
+        << "# This file contains build statements specific to the \"" << config
+        << "\"\n# configuration.\n\n";
 
-    // Open config file.
-    if (!this->OpenFileStream(this->ConfigFileStreams[config],
-                              GetNinjaConfigFilename(config))) {
-      return false;
-    }
+      // Open config file.
+      if (!this->OpenFileStream(this->ConfigFileStreams[config],
+                                GetNinjaConfigFilename(config))) {
+        return false;
+      }
 
-    // Write a comment about this file.
-    *this->ConfigFileStreams[config]
-      << "# This file contains aliases specific to the \"" << config
-      << "\"\n# configuration.\n\n"
-      << "include " << GetNinjaImplFilename(config) << "\n\n";
-  }
+      // Write a comment about this file.
+      *this->ConfigFileStreams[config]
+        << "# This file contains aliases specific to the \"" << config
+        << "\"\n# configuration.\n\n"
+        << "include " << GetNinjaImplFilename(config) << "\n\n";
 
-  return true;
+      return true;
+    });
 }
 
 void cmGlobalNinjaMultiGenerator::CloseBuildFileStreams()

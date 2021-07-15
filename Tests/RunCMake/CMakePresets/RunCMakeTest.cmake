@@ -9,20 +9,12 @@ endif()
 
 set(RunCMake-check-file check.cmake)
 
-function(validate_schema file expected_result)
-  execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" "${RunCMake_SOURCE_DIR}/validate_schema.py" "${file}"
-    RESULT_VARIABLE _result
-    OUTPUT_VARIABLE _output
-    ERROR_VARIABLE _error
-    )
-  if(NOT _result STREQUAL expected_result)
-    string(REPLACE "\n" "\n" _output_p "${_output}")
-    string(REPLACE "\n" "\n" _error_p "${_error}")
-    string(APPEND RunCMake_TEST_FAILED "Expected result of validating ${file}: ${expected_result}\nActual result: ${_result}\nOutput:\n${_output_p}\nError:\n${_error_p}")
-  endif()
+include("${RunCMake_SOURCE_DIR}/validate_schema.cmake")
 
-  set(RunCMake_TEST_FAILED "${RunCMake_TEST_FAILED}" PARENT_SCOPE)
+function(reset_cmake_presets_directory name)
+  set(RunCMake_TEST_SOURCE_DIR "${RunCMake_BINARY_DIR}/${name}")
+  file(REMOVE_RECURSE "${RunCMake_TEST_SOURCE_DIR}")
+  file(MAKE_DIRECTORY "${RunCMake_TEST_SOURCE_DIR}")
 endfunction()
 
 function(run_cmake_presets name)
@@ -31,8 +23,11 @@ function(run_cmake_presets name)
   if(CMakePresets_SOURCE_ARG)
     set(_source_arg "${CMakePresets_SOURCE_ARG}")
   endif()
-  file(REMOVE_RECURSE "${RunCMake_TEST_SOURCE_DIR}")
-  file(MAKE_DIRECTORY "${RunCMake_TEST_SOURCE_DIR}")
+
+  if(NOT RunCMake_TEST_SOURCE_DIR_NO_CLEAN)
+    file(REMOVE_RECURSE "${RunCMake_TEST_SOURCE_DIR}")
+    file(MAKE_DIRECTORY "${RunCMake_TEST_SOURCE_DIR}")
+  endif()
   configure_file("${RunCMake_SOURCE_DIR}/CMakeLists.txt.in" "${RunCMake_TEST_SOURCE_DIR}/CMakeLists.txt" @ONLY)
 
   if(NOT CMakePresets_FILE)
@@ -77,6 +72,7 @@ endfunction()
 # Test CMakePresets.json errors
 set(CMakePresets_SCHEMA_EXPECTED_RESULT 1)
 run_cmake_presets(NoCMakePresets)
+run_cmake_presets(Comment)
 run_cmake_presets(JSONParseError)
 run_cmake_presets(InvalidRoot)
 run_cmake_presets(NoVersion)
@@ -107,6 +103,8 @@ run_cmake_presets(InvalidVariableValue)
 run_cmake_presets(ExtraRootField)
 run_cmake_presets(ExtraPresetField)
 run_cmake_presets(ExtraVariableField)
+run_cmake_presets(FuturePresetInstallDirField)
+run_cmake_presets(FuturePresetToolchainField)
 run_cmake_presets(InvalidPresetVendor)
 set(CMakePresets_SCHEMA_EXPECTED_RESULT 0)
 run_cmake_presets(DuplicatePresets)
@@ -129,7 +127,10 @@ run_cmake_presets(NoSuchMacro)
 run_cmake_presets(EnvCycle)
 run_cmake_presets(EmptyEnv)
 run_cmake_presets(EmptyPenv)
+run_cmake_presets(InvalidRegex)
 set(CMakePresets_SCHEMA_EXPECTED_RESULT 1)
+run_cmake_presets(ConditionFuture)
+run_cmake_presets(SubConditionNull)
 
 # Test cmakeMinimumRequired field
 run_cmake_presets(MinimumRequiredInvalid)
@@ -157,7 +158,8 @@ run_cmake_presets(GoodBinaryUp)
 set(CMakePresets_SOURCE_ARG "../GoodBinaryRelative")
 run_cmake_presets(GoodBinaryRelative)
 unset(CMakePresets_SOURCE_ARG)
-run_cmake_presets(GoodSpaces "--preset=Good Spaces")
+run_cmake_presets(GoodSpaces "--preset" "Good Spaces")
+run_cmake_presets(GoodSpacesEq "--preset=Good Spaces")
 if(WIN32)
   run_cmake_presets(GoodWindowsBackslash)
 endif()
@@ -193,6 +195,35 @@ run_cmake_presets(GoodInheritanceMulti)
 run_cmake_presets(GoodInheritanceMultiSecond)
 run_cmake_presets(GoodInheritanceMacro)
 
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/GoodInstall.json.in")
+run_cmake_presets(GoodInstallDefault)
+run_cmake_presets(GoodInstallInherit)
+run_cmake_presets(GoodInstallOverride)
+run_cmake_presets(GoodInstallCommandLine  "--install-prefix=${RunCMake_SOURCE_DIR}/path/passed/on/command_line")
+
+set(RunCMake_TEST_SOURCE_DIR_NO_CLEAN 1)
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/GoodToolchain.json.in")
+
+reset_cmake_presets_directory(GoodToolchainInherit)
+file(WRITE "${RunCMake_BINARY_DIR}/GoodToolchainDefault/toolchain.cmake" "")
+run_cmake_presets(GoodToolchainDefault)
+
+reset_cmake_presets_directory(GoodToolchainInherit)
+file(WRITE "${RunCMake_BINARY_DIR}/GoodToolchainInherit/toolchain.cmake" "")
+run_cmake_presets(GoodToolchainInherit)
+
+reset_cmake_presets_directory(GoodToolchainOverride)
+file(WRITE "${RunCMake_BINARY_DIR}/GoodToolchainOverride/override_toolchain.cmake" "")
+run_cmake_presets(GoodToolchainOverride)
+
+reset_cmake_presets_directory(GoodToolchainCommandLine)
+file(WRITE "${RunCMake_BINARY_DIR}/GoodToolchainCommandLine/cmd_line_toolchain.cmake" "")
+run_cmake_presets(GoodToolchainCommandLine  "--toolchain=${RunCMake_BINARY_DIR}/GoodToolchainCommandLine/cmd_line_toolchain.cmake")
+
+unset(RunCMake_TEST_SOURCE_DIR_NO_CLEAN)
+
+
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/CMakePresets.json.in")
 # Test bad preset arguments
 run_cmake_presets(VendorMacro)
 run_cmake_presets(InvalidGenerator)
@@ -220,7 +251,8 @@ endif()
 
 # Test bad command line arguments
 run_cmake_presets(NoSuchPreset)
-run_cmake_presets(NoPresetArgument --preset=)
+run_cmake_presets(NoPresetArgument --preset)
+run_cmake_presets(NoPresetArgumentEq --preset= -DA=B)
 run_cmake_presets(UseHiddenPreset)
 
 # Test CMakeUserPresets.json
@@ -264,9 +296,29 @@ set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/Debug.json.in")
 run_cmake_presets(NoDebug)
 run_cmake_presets(Debug)
 
+# Test ${hostSystemName} macro
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/HostSystemName.json.in")
+run_cmake_presets(HostSystemName)
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/HostSystemNameFuture.json.in")
+run_cmake_presets(HostSystemNameFuture)
+
+# Test conditions
+set(CMakePresets_FILE "${RunCMake_SOURCE_DIR}/Conditions.json.in")
+run_cmake_presets(ListConditions --list-presets)
+run_cmake_presets(SimpleTrue)
+run_cmake_presets(SimpleFalse)
+unset(CMakePresets_FILE)
+
+# Test optional generator and buildDir fields
+run_cmake_presets(OptionalBinaryDirField -B "${RunCMake_BINARY_DIR}/OptionalBinaryDirField/build")
+run_cmake_presets(OptionalGeneratorField -G "${RunCMake_GENERATOR}")
+
 # Test the example from the documentation
 file(READ "${RunCMake_SOURCE_DIR}/../../../Help/manual/presets/example.json" _example)
 string(REPLACE "\"generator\": \"Ninja\"" "\"generator\": \"@RunCMake_GENERATOR@\"" _example "${_example}")
+if(CMAKE_HOST_WIN32)
+  string(REPLACE [["PATH": "$env{HOME}/ninja/bin:$penv{PATH}"]] [["PATH": "$env{HOME}/ninja/bin;$penv{PATH}"]] _example "${_example}")
+endif()
 file(WRITE "${RunCMake_BINARY_DIR}/example.json.in" "${_example}")
 set(CMakePresets_FILE "${RunCMake_BINARY_DIR}/example.json.in")
 run_cmake_presets(DocumentationExample --preset=default)

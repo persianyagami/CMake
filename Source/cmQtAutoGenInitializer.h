@@ -4,6 +4,7 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <memory>
 #include <set>
 #include <string>
@@ -70,6 +71,7 @@ public:
   {
     std::string FullPath;
     cmSourceFile* SF = nullptr;
+    std::vector<size_t> Configs;
     bool Generated = false;
     bool SkipMoc = false;
     bool SkipUic = false;
@@ -96,10 +98,11 @@ public:
       , GenNameUpper(cmQtAutoGen::GeneratorNameUpper(gen)){};
   };
 
-public:
-  /** @return The detected Qt version and the required Qt major version.  */
+  /** @param mocExecutable The file path to the moc executable. Will be used as
+     fallback to query the version
+      @return The detected Qt version and the required Qt major version. */
   static std::pair<IntegerVersion, unsigned int> GetQtVersion(
-    cmGeneratorTarget const* genTarget);
+    cmGeneratorTarget const* genTarget, std::string mocExecutable);
 
   cmQtAutoGenInitializer(cmQtAutoGenGlobalInitializer* globalInitializer,
                          cmGeneratorTarget* genTarget,
@@ -132,12 +135,16 @@ private:
   cmSourceFile* AddGeneratedSource(std::string const& filename,
                                    GenVarsT const& genVars,
                                    bool prepend = false);
+  void AddGeneratedSource(ConfigString const& filename,
+                          GenVarsT const& genVars, bool prepend = false);
   void AddToSourceGroup(std::string const& fileName,
                         cm::string_view genNameUpper);
   void AddCleanFile(std::string const& fileName);
 
   void ConfigFileNames(ConfigString& configString, cm::string_view prefix,
                        cm::string_view suffix);
+  void ConfigFileNamesAndGenex(ConfigString& configString, std::string& genex,
+                               cm::string_view prefix, cm::string_view suffix);
   void ConfigFileClean(ConfigString& configString);
 
   std::string GetMocBuildPath(MUFile const& muf);
@@ -145,7 +152,6 @@ private:
   bool GetQtExecutable(GenVarsT& genVars, const std::string& executable,
                        bool ignoreMissingTarget) const;
 
-private:
   cmQtAutoGenGlobalInitializer* GlobalInitializer = nullptr;
   cmGeneratorTarget* GenTarget = nullptr;
   cmGlobalGenerator* GlobalGen = nullptr;
@@ -207,7 +213,8 @@ private:
 
     bool RelaxedMode = false;
     bool PathPrefix = false;
-    std::string CompilationFile;
+    ConfigString CompilationFile;
+    std::string CompilationFileGenex;
     // Compiler implicit pre defines
     std::vector<std::string> PredefsCmd;
     ConfigString PredefsFile;
@@ -233,9 +240,12 @@ private:
       : GenVarsT(GenT::UIC){};
 
     std::set<std::string> SkipUi;
-    std::vector<UiFileT> UiFiles;
+    std::vector<std::string> UiFilesNoOptions;
+    std::vector<UiFileT> UiFilesWithOptions;
     ConfigStrings<std::vector<std::string>> Options;
     std::vector<std::string> SearchPaths;
+    std::vector<std::pair<ConfigString /*ui header*/, std::string /*genex*/>>
+      UiHeaders;
   } Uic;
 
   /** rcc variables.  */

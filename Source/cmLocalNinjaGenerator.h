@@ -10,7 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "cmListFileCache.h"
 #include "cmLocalCommonGenerator.h"
+#include "cmLocalGenerator.h"
 #include "cmNinjaTypes.h"
 #include "cmOutputConverter.h"
 
@@ -59,7 +61,8 @@ public:
   }
 
   std::string BuildCommandLine(
-    std::vector<std::string> const& cmdLines,
+    std::vector<std::string> const& cmdLines, std::string const& outputConfig,
+    std::string const& commandConfig,
     std::string const& customStep = std::string(),
     cmGeneratorTarget const* target = nullptr) const;
 
@@ -70,6 +73,13 @@ public:
                            const std::string& fileConfig,
                            cmNinjaTargetDepends depends);
 
+  std::string CreateUtilityOutput(std::string const& targetName,
+                                  std::vector<std::string> const& byproducts,
+                                  cmListFileBacktrace const& bt) override;
+
+  std::vector<cmCustomCommandGenerator> MakeCustomCommandGenerators(
+    cmCustomCommand const& cc, std::string const& config) override;
+
   void AddCustomCommandTarget(cmCustomCommand const* cc,
                               cmGeneratorTarget* target);
   void AppendCustomCommandLines(cmCustomCommandGenerator const& ccg,
@@ -78,11 +88,13 @@ public:
                                cmNinjaDeps& ninjaDeps,
                                const std::string& config);
 
+  bool HasUniqueByproducts(std::vector<std::string> const& byproducts,
+                           cmListFileBacktrace const& bt);
+
 protected:
   std::string ConvertToIncludeReference(
-    std::string const& path,
-    cmOutputConverter::OutputFormat format = cmOutputConverter::SHELL,
-    bool forceFullPaths = false) override;
+    std::string const& path, IncludePathStyle pathStyle,
+    cmOutputConverter::OutputFormat format) override;
 
 private:
   cmGeneratedFileStream& GetImplFileStream(const std::string& config) const;
@@ -96,18 +108,21 @@ private:
                                        const std::string& config);
   void WriteNinjaFilesInclusionConfig(std::ostream& os);
   void WriteNinjaFilesInclusionCommon(std::ostream& os);
+  void WriteNinjaWorkDir(std::ostream& os);
   void WriteProcessedMakefile(std::ostream& os);
   void WritePools(std::ostream& os);
 
-  void WriteCustomCommandBuildStatement(cmCustomCommand const* cc,
-                                        const cmNinjaDeps& orderOnlyDeps,
-                                        const std::string& config);
+  void WriteCustomCommandBuildStatement(
+    cmCustomCommand const* cc, const std::set<cmGeneratorTarget*>& targets,
+    const std::string& config);
 
   void WriteCustomCommandBuildStatements(const std::string& config);
 
   std::string MakeCustomLauncher(cmCustomCommandGenerator const& ccg);
 
   std::string WriteCommandScript(std::vector<std::string> const& cmdLines,
+                                 std::string const& outputConfig,
+                                 std::string const& commandConfig,
                                  std::string const& customStep,
                                  cmGeneratorTarget const* target) const;
 

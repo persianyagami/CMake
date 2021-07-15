@@ -26,6 +26,9 @@ static const char* cmDocumentationUsage[][2] = { { nullptr,
                                                  { nullptr, nullptr } };
 
 static const char* cmDocumentationOptions[][2] = {
+  { "--preset <preset>, --preset=<preset>",
+    "Read arguments from a test preset." },
+  { "--list-presets", "List available test presets." },
   { "-C <cfg>, --build-config <cfg>", "Choose configuration to test." },
   { "--progress", "Enable short progress output from tests." },
   { "-V,--verbose", "Enable verbose output from tests." },
@@ -47,13 +50,15 @@ static const char* cmDocumentationOptions[][2] = {
     "given number of jobs." },
   { "-Q,--quiet", "Make ctest quiet." },
   { "-O <file>, --output-log <file>", "Output to log file" },
+  { "--output-junit <file>", "Output test results to JUnit XML file." },
   { "-N,--show-only[=format]",
     "Disable actual execution of tests. The optional 'format' defines the "
     "format of the test information and can be 'human' for the current text "
     "format or 'json-v1' for json format. Defaults to 'human'." },
   { "-L <regex>, --label-regex <regex>",
-    "Run tests with labels matching "
-    "regular expression." },
+    "Run tests with labels matching regular expression. "
+    "With multiple -L, run tests where each "
+    "regular expression matches at least one label." },
   { "-R <regex>, --tests-regex <regex>",
     "Run tests matching regular "
     "expression." },
@@ -61,8 +66,9 @@ static const char* cmDocumentationOptions[][2] = {
     "Exclude tests matching regular "
     "expression." },
   { "-LE <regex>, --label-exclude <regex>",
-    "Exclude tests with labels "
-    "matching regular expression." },
+    "Exclude tests with labels matching regular expression. "
+    "With multiple -LE, exclude tests where each "
+    "regular expression matches at least one label." },
   { "-FA <regex>, --fixture-exclude-any <regex>",
     "Do not automatically "
     "add any tests for "
@@ -111,6 +117,7 @@ static const char* cmDocumentationOptions[][2] = {
   { "--no-subproject-summary",
     "Disable timing summary information for "
     "subprojects." },
+  { "--test-dir <dir>", "Specify the directory in which to look for tests." },
   { "--build-and-test", "Configure, build and run a test." },
   { "--build-target", "Specify a specific target to build." },
   { "--build-nocmake", "Run the build without running cmake first." },

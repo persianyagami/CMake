@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cmInstallGenerator.h"
+#include "cmInstallType.h"
 #include "cmListFileCache.h"
 #include "cmScriptGenerator.h"
 
@@ -38,7 +39,6 @@ public:
     NamelinkModeSkip
   };
   void SetNamelinkMode(NamelinkModeType mode) { this->NamelinkMode = mode; }
-  NamelinkModeType GetNamelinkMode() const { return this->NamelinkMode; }
 
   std::string GetInstallFilename(const std::string& config) const;
 
@@ -65,22 +65,34 @@ public:
 
   std::string GetDestination(std::string const& config) const;
 
-  cmListFileBacktrace const& GetBacktrace() const { return this->Backtrace; }
+  struct Files
+  {
+    // Names or paths of files to be read from the source or build tree.
+    // The paths may be computed as [FromDir/] + From[i].
+    std::vector<std::string> From;
+
+    // Corresponding names of files to be written in the install directory.
+    // The paths may be computed as Destination/ + [ToDir/] + To[i].
+    std::vector<std::string> To;
+
+    // Prefix for all files in From.
+    std::string FromDir;
+
+    // Prefix for all files in To.
+    std::string ToDir;
+
+    NamelinkModeType NamelinkMode = NamelinkModeNone;
+    bool NoTweak = false;
+    bool UseSourcePermissions = false;
+    cmInstallType Type = cmInstallType();
+  };
+  Files GetFiles(std::string const& config) const;
+
+  bool GetOptional() const { return this->Optional; }
 
 protected:
   void GenerateScriptForConfig(std::ostream& os, const std::string& config,
                                Indent indent) override;
-  void GenerateScriptForConfigObjectLibrary(std::ostream& os,
-                                            const std::string& config,
-                                            Indent indent);
-  using TweakMethod = void (cmInstallTargetGenerator::*)(std::ostream&, Indent,
-                                                         const std::string&,
-                                                         const std::string&);
-  void AddTweak(std::ostream& os, Indent indent, const std::string& config,
-                std::string const& file, TweakMethod tweak);
-  void AddTweak(std::ostream& os, Indent indent, const std::string& config,
-                std::vector<std::string> const& files, TweakMethod tweak);
-  std::string GetDestDirPath(std::string const& file);
   void PreReplacementTweaks(std::ostream& os, Indent indent,
                             const std::string& config,
                             std::string const& file);
@@ -111,5 +123,4 @@ protected:
   NamelinkModeType NamelinkMode;
   bool const ImportLibrary;
   bool const Optional;
-  cmListFileBacktrace const Backtrace;
 };

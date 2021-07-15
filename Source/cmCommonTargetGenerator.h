@@ -40,6 +40,7 @@ protected:
   cmLocalCommonGenerator* LocalCommonGenerator;
   cmGlobalCommonGenerator* GlobalCommonGenerator;
   std::vector<std::string> ConfigNames;
+  bool UseLWYU = false;
 
   void AppendFortranFormatFlags(std::string& flags,
                                 cmSourceFile const& source);
@@ -63,6 +64,8 @@ protected:
   std::vector<std::string> GetLinkedTargetDirectories(
     const std::string& config) const;
   std::string ComputeTargetCompilePDB(const std::string& config) const;
+
+  std::string GetLinkerLauncher(const std::string& config);
 
 private:
   using ByLanguageMap = std::map<std::string, std::string>;

@@ -310,10 +310,23 @@ function(cpack_deb_prepare_package_vars)
           set(IGNORE_MISSING_INFO_FLAG "--ignore-missing-info")
         endif()
 
+        if(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS)
+          unset(PRIVATE_SEARCH_DIR_OPTIONS)
+          # Add -l option if the tool supports it
+          if(DEFINED SHLIBDEPS_EXECUTABLE_VERSION AND SHLIBDEPS_EXECUTABLE_VERSION VERSION_GREATER_EQUAL 1.17.0)
+            foreach(dir IN LISTS CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS)
+              list(APPEND PRIVATE_SEARCH_DIR_OPTIONS "-l${dir}")
+            endforeach()
+          else()
+            message(WARNING "CPackDeb: dkpg-shlibdeps is too old. \"CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS\" is therefore ignored.")
+          endif()
+        endif()
+
         # Execute dpkg-shlibdeps
         # --ignore-missing-info : allow dpkg-shlibdeps to run even if some libs do not belong to a package
+        # -l<dir>: make dpkg-shlibdeps also search in this directory for (private) shared library dependencies
         # -O : print to STDOUT
-        execute_process(COMMAND ${SHLIBDEPS_EXECUTABLE} ${IGNORE_MISSING_INFO_FLAG} -O ${CPACK_DEB_BINARY_FILES}
+        execute_process(COMMAND ${SHLIBDEPS_EXECUTABLE} ${PRIVATE_SEARCH_DIR_OPTIONS} ${IGNORE_MISSING_INFO_FLAG} -O ${CPACK_DEB_BINARY_FILES}
           WORKING_DIRECTORY "${CPACK_TEMPORARY_DIRECTORY}"
           OUTPUT_VARIABLE SHLIBDEPS_OUTPUT
           RESULT_VARIABLE SHLIBDEPS_RESULT
@@ -325,7 +338,7 @@ function(cpack_deb_prepare_package_vars)
         endif()
         if(NOT SHLIBDEPS_RESULT EQUAL 0)
           message(FATAL_ERROR "CPackDeb: dpkg-shlibdeps: '${SHLIBDEPS_ERROR}';\n"
-              "executed command: '${SHLIBDEPS_EXECUTABLE} ${IGNORE_MISSING_INFO_FLAG} -O ${CPACK_DEB_BINARY_FILES}';\n"
+              "executed command: '${SHLIBDEPS_EXECUTABLE} ${PRIVATE_SEARCH_DIR_OPTIONS} ${IGNORE_MISSING_INFO_FLAG} -O ${CPACK_DEB_BINARY_FILES}';\n"
               "found files: '${INSTALL_FILE_}';\n"
               "files info: '${CPACK_DEB_INSTALL_FILES}';\n"
               "binary files: '${CPACK_DEB_BINARY_FILES}'")
@@ -544,7 +557,7 @@ function(cpack_deb_prepare_package_vars)
         string(APPEND _description_failure_message
           " or CPACK_DEBIAN_${_local_component_name}_DESCRIPTION")
       endif()
-      message(FATAL_ERROR _description_failure_message)
+      message(FATAL_ERROR "${_description_failure_message}")
     endif()
 
   # Ok, description has set. According to the `Debian Policy Manual`_ the first
@@ -649,10 +662,12 @@ function(cpack_deb_prepare_package_vars)
 
   # add ldconfig call in default postrm and postint
   set(CPACK_ADD_LDCONFIG_CALL 0)
+  # all files in CPACK_DEB_SHARED_OBJECT_FILES have dot at the beginning
+  set(_LDCONF_DEFAULTS "./lib" "./usr/lib")
   foreach(_FILE IN LISTS CPACK_DEB_SHARED_OBJECT_FILES)
     get_filename_component(_DIR ${_FILE} DIRECTORY)
-    # all files in CPACK_DEB_SHARED_OBJECT_FILES have dot at the beginning
-    if(_DIR STREQUAL "./lib" OR _DIR STREQUAL "./usr/lib")
+    get_filename_component(_PARENT_DIR ${_DIR} DIRECTORY)
+    if(_DIR IN_LIST _LDCONF_DEFAULTS OR _PARENT_DIR IN_LIST _LDCONF_DEFAULTS)
       set(CPACK_ADD_LDCONFIG_CALL 1)
     endif()
   endforeach()
@@ -660,7 +675,7 @@ function(cpack_deb_prepare_package_vars)
   if(CPACK_ADD_LDCONFIG_CALL)
     set(CPACK_DEBIAN_GENERATE_POSTINST 1)
     set(CPACK_DEBIAN_GENERATE_POSTRM 1)
-    foreach(f IN LISTS PACKAGE_CONTROL_EXTRA)
+    foreach(f IN LISTS CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA)
       get_filename_component(n "${f}" NAME)
       if(n STREQUAL "postinst")
         set(CPACK_DEBIAN_GENERATE_POSTINST 0)

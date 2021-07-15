@@ -15,7 +15,6 @@ These modules are loaded using the :command:`include` command.
 .. toctree::
    :maxdepth: 1
 
-   /module/AddFileDependencies
    /module/AndroidTestUtilities
    /module/BundleUtilities
    /module/CheckCCompilerFlag
@@ -186,6 +185,7 @@ They are normally called through the :command:`find_package` command.
    /module/FindMPEG
    /module/FindMPEG2
    /module/FindMPI
+   /module/FindMsys
    /module/FindODBC
    /module/FindOpenACC
    /module/FindOpenAL
@@ -272,6 +272,7 @@ Deprecated Utility Modules
 .. toctree::
    :maxdepth: 1
 
+   /module/AddFileDependencies
    /module/CMakeDetermineVSServicePack
    /module/CMakeExpandImportedTargets
    /module/CMakeForceCompiler

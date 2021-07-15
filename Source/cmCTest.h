@@ -461,6 +461,11 @@ public:
   void SetRunCurrentScript(bool value);
 
 private:
+  void SetPersistentOptionIfNotEmpty(const std::string& value,
+                                     const std::string& optionName);
+  void AddPersistentMultiOptionIfNotEmpty(const std::string& value,
+                                          const std::string& optionName);
+
   int GenerateNotesFile(const std::string& files);
 
   void BlockTestErrorDiagnostics();
@@ -483,6 +488,9 @@ private:
 
   /** add a variable definition from a command line -D value */
   bool AddVariableDefinition(const std::string& arg);
+
+  /** set command line arguments read from a test preset */
+  bool SetArgsFromPreset(const std::string& presetName, bool listPresets);
 
   /** parse and process most common command line arguments */
   bool HandleCommandLineArguments(size_t& i, std::vector<std::string>& args,
@@ -527,6 +535,9 @@ private:
 
   int RunCMakeAndTest(std::string* output);
   int ExecuteTests();
+
+  /** return true iff change directory was successful */
+  bool TryToChangeDirectory(std::string const& dir);
 
   struct Private;
   std::unique_ptr<Private> Impl;

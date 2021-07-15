@@ -96,8 +96,8 @@ Cross Compiling
 ===============
 
 If :manual:`cmake(1)` is invoked with the command line parameter
-``-DCMAKE_TOOLCHAIN_FILE=path/to/file``, the file will be loaded early to set
-values for the compilers.
+``--toolchain path/to/file`` or ``-DCMAKE_TOOLCHAIN_FILE=path/to/file``, the
+file will be loaded early to set values for the compilers.
 The :variable:`CMAKE_CROSSCOMPILING` variable is set to true when CMake is
 cross-compiling.
 
@@ -358,6 +358,10 @@ CMake uses the following steps to select one of the environments:
 
 * Else, an error diagnostic will be issued that neither the NDK or
   Standalone Toolchain can be found.
+
+.. versionadded:: 3.20
+  If an Android NDK is selected, its version number is reported
+  in the :variable:`CMAKE_ANDROID_NDK_VERSION` variable.
 
 .. _`Cross Compiling for Android with the NDK`:
 

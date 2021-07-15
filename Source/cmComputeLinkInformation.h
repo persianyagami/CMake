@@ -35,17 +35,33 @@ public:
   ~cmComputeLinkInformation();
   bool Compute();
 
+  enum class ItemIsPath
+  {
+    No,
+    Yes,
+  };
+
+  enum class ItemIsObject
+  {
+    No,
+    Yes,
+  };
+
   struct Item
   {
     Item() = default;
-    Item(BT<std::string> v, bool p, cmGeneratorTarget const* target = nullptr)
+    Item(BT<std::string> v, ItemIsPath isPath,
+         ItemIsObject isObject = ItemIsObject::No,
+         cmGeneratorTarget const* target = nullptr)
       : Value(std::move(v))
-      , IsPath(p)
+      , IsPath(isPath)
+      , IsObject(isObject)
       , Target(target)
     {
     }
     BT<std::string> Value;
-    bool IsPath = true;
+    ItemIsPath IsPath = ItemIsPath::Yes;
+    ItemIsObject IsObject = ItemIsObject::No;
     cmGeneratorTarget const* Target = nullptr;
   };
   using ItemVector = std::vector<Item>;
@@ -55,6 +71,7 @@ public:
   std::vector<BT<std::string>> GetDirectoriesWithBacktraces();
   std::vector<std::string> const& GetDepends() const;
   std::vector<std::string> const& GetFrameworkPaths() const;
+  std::set<std::string> const& GetFrameworkPathsEmitted() const;
   std::string GetLinkLanguage() const { return this->LinkLanguage; }
   std::vector<std::string> const& GetRuntimeSearchPath() const;
   std::string const& GetRuntimeFlag() const { return this->RuntimeFlag; }
@@ -63,10 +80,19 @@ public:
   std::string GetRPathString(bool for_install) const;
   std::string GetChrpathString() const;
   std::set<cmGeneratorTarget const*> const& GetSharedLibrariesLinked() const;
+  std::vector<cmGeneratorTarget const*> const& GetRuntimeDLLs() const
+  {
+    return this->RuntimeDLLs;
+  }
 
   std::string const& GetLibLinkFileFlag() const
   {
     return this->LibLinkFileFlag;
+  }
+
+  std::string const& GetObjLinkFileFlag() const
+  {
+    return this->ObjLinkFileFlag;
   }
 
   std::string const& GetRPathLinkFlag() const { return this->RPathLinkFlag; }
@@ -77,9 +103,11 @@ public:
   const cmGeneratorTarget* GetTarget() { return this->Target; }
 
 private:
-  void AddItem(BT<std::string> const& item, const cmGeneratorTarget* tgt);
+  void AddItem(BT<std::string> const& item, const cmGeneratorTarget* tgt,
+               ItemIsObject isObject = ItemIsObject::No);
   void AddSharedDepItem(BT<std::string> const& item,
                         cmGeneratorTarget const* tgt);
+  void AddRuntimeDLL(cmGeneratorTarget const* tgt);
 
   // Output information.
   ItemVector Items;
@@ -88,6 +116,7 @@ private:
   std::vector<std::string> FrameworkPaths;
   std::vector<std::string> RuntimeSearchPath;
   std::set<cmGeneratorTarget const*> SharedLibrariesLinked;
+  std::vector<cmGeneratorTarget const*> RuntimeDLLs;
 
   // Context information.
   cmGeneratorTarget const* const Target;
@@ -111,6 +140,7 @@ private:
   const char* LoaderFlag;
   std::string LibLinkFlag;
   std::string LibLinkFileFlag;
+  std::string ObjLinkFileFlag;
   std::string LibLinkSuffix;
   std::string RuntimeFlag;
   std::string RuntimeSep;
@@ -152,10 +182,9 @@ private:
   // Handling of link items.
   void AddTargetItem(BT<std::string> const& item,
                      const cmGeneratorTarget* target);
-  void AddFullItem(BT<std::string> const& item);
+  void AddFullItem(BT<std::string> const& item, ItemIsObject isObject);
   bool CheckImplicitDirItem(std::string const& item);
   void AddUserItem(BT<std::string> const& item, bool pathNotKnown);
-  void AddDirectoryItem(std::string const& item);
   void AddFrameworkItem(std::string const& item);
   void DropDirectoryItem(std::string const& item);
   bool CheckSharedLibNoSOName(std::string const& item);
@@ -165,7 +194,7 @@ private:
   // Framework info.
   void ComputeFrameworkInfo();
   void AddFrameworkPath(std::string const& p);
-  std::set<std::string> FrameworkPathsEmmitted;
+  std::set<std::string> FrameworkPathsEmitted;
   cmsys::RegularExpression SplitFramework;
 
   // Linker search path computation.

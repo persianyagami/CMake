@@ -18,6 +18,7 @@
 #include "cmCMakePath.h"
 #include "cmExecutionStatus.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmRange.h"
 #include "cmStringAlgorithms.h"
 #include "cmSubcommandTable.h"
@@ -37,7 +38,7 @@ public:
   template <typename T>
   CMakePathArgumentParser& Bind(cm::static_string_view name, T Result::*member)
   {
-    cmArgumentParser<Result>::Bind(name, member);
+    this->cmArgumentParser<Result>::Bind(name, member);
     return *this;
   }
 
@@ -48,12 +49,12 @@ public:
   {
     this->Inputs.clear();
 
-    return cmArgumentParser<Result>::Parse(cmMakeRange(args).advance(Advance),
-                                           &this->Inputs, keywordsMissingValue,
-                                           parsedKeywords);
+    return this->cmArgumentParser<Result>::Parse(
+      cmMakeRange(args).advance(Advance), &this->Inputs, keywordsMissingValue,
+      parsedKeywords);
   }
 
-  const std::vector<std::string>& GetInputs() const { return Inputs; }
+  const std::vector<std::string>& GetInputs() const { return this->Inputs; }
 
 protected:
   mutable std::vector<std::string> Inputs;
@@ -74,7 +75,7 @@ public:
   ArgumentParserWithOutputVariable& Bind(cm::static_string_view name,
                                          T Result::*member)
   {
-    cmArgumentParser<Result>::Bind(name, member);
+    this->cmArgumentParser<Result>::Bind(name, member);
     return *this;
   }
 
@@ -84,7 +85,7 @@ public:
     this->KeywordsMissingValue.clear();
     this->ParsedKeywords.clear();
 
-    return CMakePathArgumentParser<Result>::template Parse<Advance>(
+    return this->CMakePathArgumentParser<Result>::template Parse<Advance>(
       args, &this->KeywordsMissingValue, &this->ParsedKeywords);
   }
 
@@ -149,8 +150,8 @@ public:
 bool getInputPath(const std::string& arg, cmExecutionStatus& status,
                   std::string& path)
 {
-  auto def = status.GetMakefile().GetDefinition(arg);
-  if (def == nullptr) {
+  cmProp def = status.GetMakefile().GetDefinition(arg);
+  if (!def) {
     status.SetError("undefined variable for input path.");
     return false;
   }
@@ -194,7 +195,7 @@ bool HandleGetCommand(std::vector<std::string> const& args,
                  }
                  return path.GetNarrowStem();
                } },
-             { "RELATIVE_PATH"_s,
+             { "RELATIVE_PART"_s,
                [](const cmCMakePath& path, bool) -> cmCMakePath {
                  return path.GetRelativePath();
                } },
@@ -817,7 +818,7 @@ bool HandleHasStemCommand(std::vector<std::string> const& args,
     [](const cmCMakePath& path) -> bool { return path.HasStem(); });
 }
 
-bool HandleHasRelativePathCommand(std::vector<std::string> const& args,
+bool HandleHasRelativePartCommand(std::vector<std::string> const& args,
                                   cmExecutionStatus& status)
 {
   return HandleHasItemCommand(
@@ -929,17 +930,8 @@ bool HandleIsPrefixCommand(std::vector<std::string> const& args,
 bool HandleHashCommand(std::vector<std::string> const& args,
                        cmExecutionStatus& status)
 {
-  if (args.size() < 3 || args.size() > 4) {
-    status.SetError("HASH must be called with two or three arguments.");
-    return false;
-  }
-
-  static NormalizeParser const parser;
-
-  const auto arguments = parser.Parse(args);
-
-  if (parser.GetInputs().size() != 1) {
-    status.SetError("HASH called with unexpected arguments.");
+  if (args.size() != 3) {
+    status.SetError("HASH must be called with two arguments.");
     return false;
   }
 
@@ -948,15 +940,14 @@ bool HandleHashCommand(std::vector<std::string> const& args,
     return false;
   }
 
-  const auto& output = parser.GetInputs().front();
+  const auto& output = args[2];
 
   if (output.empty()) {
     status.SetError("Invalid name for output variable.");
     return false;
   }
 
-  auto hash = hash_value(arguments.Normalize ? cmCMakePath(inputPath).Normal()
-                                             : cmCMakePath(inputPath));
+  auto hash = hash_value(cmCMakePath(inputPath).Normal());
 
   std::ostringstream out;
   out << std::setbase(16) << hash;
@@ -996,7 +987,7 @@ bool cmCMakePathCommand(std::vector<std::string> const& args,
     { "HAS_FILENAME"_s, HandleHasFilenameCommand },
     { "HAS_EXTENSION"_s, HandleHasExtensionCommand },
     { "HAS_STEM"_s, HandleHasStemCommand },
-    { "HAS_RELATIVE_PATH"_s, HandleHasRelativePathCommand },
+    { "HAS_RELATIVE_PART"_s, HandleHasRelativePartCommand },
     { "HAS_PARENT_PATH"_s, HandleHasParentPathCommand },
     { "IS_ABSOLUTE"_s, HandleIsAbsoluteCommand },
     { "IS_RELATIVE"_s, HandleIsRelativeCommand },

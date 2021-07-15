@@ -8,6 +8,7 @@
 
 include(${CMAKE_ROOT}/Modules/CMakeParseImplicitIncludeInfo.cmake)
 include(${CMAKE_ROOT}/Modules/CMakeParseImplicitLinkInfo.cmake)
+include(${CMAKE_ROOT}/Modules/CMakeParseLibraryArchitecture.cmake)
 include(CMakeTestCompilerCommon)
 
 function(CMAKE_DETERMINE_COMPILER_ABI lang src)
@@ -134,11 +135,13 @@ function(CMAKE_DETERMINE_COMPILER_ABI lang src)
 
       # Parse implicit linker information for this language, if available.
       set(implicit_dirs "")
+      set(implicit_objs "")
       set(implicit_libs "")
       set(implicit_fwks "")
       if(CMAKE_${lang}_VERBOSE_FLAG)
         CMAKE_PARSE_IMPLICIT_LINK_INFO("${OUTPUT}" implicit_libs implicit_dirs implicit_fwks log
-          "${CMAKE_${lang}_IMPLICIT_OBJECT_REGEX}")
+          "${CMAKE_${lang}_IMPLICIT_OBJECT_REGEX}"
+          COMPUTE_IMPLICIT_OBJECTS implicit_objs)
         file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
           "Parsed ${lang} implicit link information from above output:\n${log}\n\n")
       endif()
@@ -175,27 +178,9 @@ function(CMAKE_DETERMINE_COMPILER_ABI lang src)
       set(CMAKE_${lang}_IMPLICIT_LINK_DIRECTORIES "${implicit_dirs}" PARENT_SCOPE)
       set(CMAKE_${lang}_IMPLICIT_LINK_FRAMEWORK_DIRECTORIES "${implicit_fwks}" PARENT_SCOPE)
 
-      # Detect library architecture directory name.
-      if(CMAKE_LIBRARY_ARCHITECTURE_REGEX)
-        foreach(dir ${implicit_dirs})
-          if("${dir}" MATCHES "/lib/${CMAKE_LIBRARY_ARCHITECTURE_REGEX}$")
-            get_filename_component(arch "${dir}" NAME)
-            set(CMAKE_${lang}_LIBRARY_ARCHITECTURE "${arch}" PARENT_SCOPE)
-            break()
-          endif()
-        endforeach()
-      elseif(CMAKE_CXX_COMPILER_ID STREQUAL QCC)
-        foreach(dir ${implicit_dirs})
-          if (dir MATCHES "/lib$")
-            get_filename_component(assumedArchDir "${dir}" DIRECTORY)
-            get_filename_component(archParentDir "${assumedArchDir}" DIRECTORY)
-            if (archParentDir STREQUAL CMAKE_SYSROOT)
-              get_filename_component(archDirName "${assumedArchDir}" NAME)
-              set(CMAKE_${lang}_LIBRARY_ARCHITECTURE "${archDirName}" PARENT_SCOPE)
-              break()
-            endif()
-          endif()
-        endforeach()
+      cmake_parse_library_architecture(${lang} "${implicit_dirs}" "${implicit_objs}" architecture_flag)
+      if(architecture_flag)
+        set(CMAKE_${lang}_LIBRARY_ARCHITECTURE "${architecture_flag}" PARENT_SCOPE)
       endif()
 
     else()

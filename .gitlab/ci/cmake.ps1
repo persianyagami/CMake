@@ -1,12 +1,13 @@
 $erroractionpreference = "stop"
 
-$version = "3.19.0"
-$sha256sum = "67BBDA67C98C5F0789199FE1DB650F12274A6AD40FD8CAE88D208029AC618905"
-$filename = "cmake-$version-win64-x64"
+$version = "3.21.0-rc2"
+$sha256sum = "AF88454243BCBAF9F537458562D669DAF0DBEDA8C0FD82C1D93BC2B4285AE4C7"
+$filename = "cmake-$version-windows-x86_64"
 $tarball = "$filename.zip"
 
 $outdir = $pwd.Path
 $outdir = "$outdir\.gitlab"
+$ProgressPreference = 'SilentlyContinue'
 Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$version/$tarball" -OutFile "$outdir\$tarball"
 $hash = Get-FileHash "$outdir\$tarball" -Algorithm SHA256
 if ($hash.Hash -ne $sha256sum) {

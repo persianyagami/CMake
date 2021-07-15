@@ -13,6 +13,7 @@
 
 #include "cmExternalMakefileProjectGenerator.h"
 #include "cmGlobalGenerator.h"
+#include "cmMessageMetadata.h"
 #include "cmState.h"
 #include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
@@ -37,8 +38,8 @@ QCMake::QCMake(QObject* p)
   cmSystemTools::SetRunCommandHideConsole(true);
 
   cmSystemTools::SetMessageCallback(
-    [this](std::string const& msg, const char* title) {
-      this->messageCallback(msg, title);
+    [this](std::string const& msg, const cmMessageMetadata& md) {
+      this->messageCallback(msg, md.title);
     });
   cmSystemTools::SetStdoutCallback(
     [this](std::string const& msg) { this->stdoutCallback(msg); });
@@ -68,9 +69,9 @@ QCMake::QCMake(QObject* p)
   connect(&this->LoadPresetsTimer, &QTimer::timeout, this, [this]() {
     this->loadPresets();
     if (!this->PresetName.isEmpty() &&
-        this->CMakePresetsFile.Presets.find(
+        this->CMakePresetsFile.ConfigurePresets.find(
           std::string(this->PresetName.toLocal8Bit())) ==
-          this->CMakePresetsFile.Presets.end()) {
+          this->CMakePresetsFile.ConfigurePresets.end()) {
       this->setPreset(QString{});
     }
   });
@@ -158,9 +159,9 @@ void QCMake::setPreset(const QString& name, bool setBinary)
     if (!name.isNull()) {
       std::string presetName(name.toLocal8Bit());
       auto const& expandedPreset =
-        this->CMakePresetsFile.Presets[presetName].Expanded;
+        this->CMakePresetsFile.ConfigurePresets[presetName].Expanded;
       if (expandedPreset) {
-        if (setBinary) {
+        if (setBinary && !expandedPreset->BinaryDir.empty()) {
           QString binaryDir =
             QString::fromLocal8Bit(expandedPreset->BinaryDir.data());
           this->setBinaryDirectory(binaryDir);
@@ -334,7 +335,12 @@ void QCMake::setProperties(const QCMakePropertyList& newProps)
       toremove.append(QString::fromLocal8Bit(key.c_str()));
     } else {
       prop = props[idx];
-      if (prop.Value.type() == QVariant::Bool) {
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+      const bool isBool = prop.Value.type() == QVariant::Bool;
+#else
+      const bool isBool = prop.Value.metaType() == QMetaType::fromType<bool>();
+#endif
+      if (isBool) {
         state->SetCacheEntryValue(key, prop.Value.toBool() ? "ON" : "OFF");
       } else {
         state->SetCacheEntryValue(key,
@@ -420,7 +426,8 @@ QCMakePropertyList QCMake::properties() const
 
   if (!this->PresetName.isNull()) {
     std::string presetName(this->PresetName.toLocal8Bit());
-    auto const& p = this->CMakePresetsFile.Presets.at(presetName).Expanded;
+    auto const& p =
+      this->CMakePresetsFile.ConfigurePresets.at(presetName).Expanded;
     if (p) {
       for (auto const& v : p->CacheVariables) {
         if (!v.second) {
@@ -535,28 +542,25 @@ void QCMake::loadPresets()
   this->LastLoadPresetsResult = result;
 
   QVector<QCMakePreset> presets;
-  for (auto const& name : this->CMakePresetsFile.PresetOrder) {
-    auto const& it = this->CMakePresetsFile.Presets[name];
+  for (auto const& name : this->CMakePresetsFile.ConfigurePresetOrder) {
+    auto const& it = this->CMakePresetsFile.ConfigurePresets[name];
     auto const& p = it.Unexpanded;
     if (p.Hidden) {
       continue;
     }
 
     QCMakePreset preset;
-    preset.name = std::move(QString::fromLocal8Bit(p.Name.data()));
-    preset.displayName =
-      std::move(QString::fromLocal8Bit(p.DisplayName.data()));
-    preset.description =
-      std::move(QString::fromLocal8Bit(p.Description.data()));
-    preset.generator = std::move(QString::fromLocal8Bit(p.Generator.data()));
-    preset.architecture =
-      std::move(QString::fromLocal8Bit(p.Architecture.data()));
+    preset.name = QString::fromLocal8Bit(p.Name.data());
+    preset.displayName = QString::fromLocal8Bit(p.DisplayName.data());
+    preset.description = QString::fromLocal8Bit(p.Description.data());
+    preset.generator = QString::fromLocal8Bit(p.Generator.data());
+    preset.architecture = QString::fromLocal8Bit(p.Architecture.data());
     preset.setArchitecture = !p.ArchitectureStrategy ||
       p.ArchitectureStrategy == cmCMakePresetsFile::ArchToolsetStrategy::Set;
-    preset.toolset = std::move(QString::fromLocal8Bit(p.Toolset.data()));
+    preset.toolset = QString::fromLocal8Bit(p.Toolset.data());
     preset.setToolset = !p.ToolsetStrategy ||
       p.ToolsetStrategy == cmCMakePresetsFile::ArchToolsetStrategy::Set;
-    preset.enabled = it.Expanded &&
+    preset.enabled = it.Expanded && it.Expanded->ConditionResult &&
       std::find_if(this->AvailableGenerators.begin(),
                    this->AvailableGenerators.end(),
                    [&p](const cmake::GeneratorInfo& g) {

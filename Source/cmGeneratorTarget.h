@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include <cm/optional>
+
 #include "cmLinkItem.h"
 #include "cmListFileCache.h"
 #include "cmPolicies.h"
@@ -49,6 +51,9 @@ public:
   bool IsImportedGloballyVisible() const;
   bool CanCompileSources() const;
   const std::string& GetLocation(const std::string& config) const;
+
+  /** Get the full path to the target's main artifact, if known.  */
+  cm::optional<std::string> MaybeGetLocation(std::string const& config) const;
 
   std::vector<cmCustomCommand> const& GetPreBuildCommands() const;
   std::vector<cmCustomCommand> const& GetPreLinkCommands() const;
@@ -430,8 +435,9 @@ public:
 
   /** Get source files common to all configurations and diagnose cases
       with per-config sources.  Excludes sources added by a TARGET_OBJECTS
-      generator expression.  */
-  bool GetConfigCommonSourceFiles(std::vector<cmSourceFile*>& files) const;
+      generator expression.  Do not use outside the Xcode generator.  */
+  bool GetConfigCommonSourceFilesForXcode(
+    std::vector<cmSourceFile*>& files) const;
 
   bool HaveBuildTreeRPATH(const std::string& config) const;
 
@@ -452,6 +458,8 @@ public:
 
   void AddCUDAArchitectureFlags(std::string& flags) const;
   void AddCUDAToolkitFlags(std::string& flags) const;
+
+  void AddHIPArchitectureFlags(std::string& flags) const;
 
   void AddISPCTargetFlags(std::string& flags) const;
 
@@ -489,6 +497,9 @@ public:
                       const std::string& language) const;
   std::vector<BT<std::string>> GetLinkOptions(
     std::string const& config, std::string const& language) const;
+
+  std::vector<BT<std::string>>& ResolveLinkerWrapper(
+    std::vector<BT<std::string>>& result, const std::string& language) const;
 
   void GetStaticLibraryLinkOptions(std::vector<std::string>& result,
                                    const std::string& config,
@@ -584,7 +595,8 @@ public:
     std::string PdbDir;
     bool empty() const
     {
-      return OutDir.empty() && ImpDir.empty() && PdbDir.empty();
+      return this->OutDir.empty() && this->ImpDir.empty() &&
+        this->PdbDir.empty();
     }
   };
 
@@ -823,6 +835,7 @@ public:
                                     std::string const& config) const;
 
   std::string GetFortranModuleDirectory(std::string const& working_dir) const;
+  bool IsFortranBuildingInstrinsicModules() const;
 
   const std::string& GetSourcesProperty() const;
 
@@ -1028,13 +1041,15 @@ private:
                        std::string const& config,
                        const cmGeneratorTarget* headTarget,
                        bool usage_requirements_only,
-                       std::vector<cmLinkItem>& items,
-                       bool& hadHeadSensitiveCondition,
-                       bool& hadContextSensitiveCondition,
-                       bool& hadLinkLanguageSensitiveCondition) const;
-  void LookupLinkItems(std::vector<std::string> const& names,
-                       cmListFileBacktrace const& bt,
-                       std::vector<cmLinkItem>& items) const;
+                       cmLinkInterface& iface) const;
+
+  struct LookupLinkItemScope
+  {
+    cmLocalGenerator const* LG;
+  };
+  cm::optional<cmLinkItem> LookupLinkItem(std::string const& n,
+                                          cmListFileBacktrace const& bt,
+                                          LookupLinkItemScope* scope) const;
 
   std::vector<BT<std::string>> GetSourceFilePaths(
     std::string const& config) const;
@@ -1101,6 +1116,12 @@ private:
 
   cmProp GetPropertyWithPairedLanguageSupport(std::string const& lang,
                                               const char* suffix) const;
+
+  void ComputeLinkImplementationRuntimeLibraries(
+    const std::string& config, cmOptionalLinkImplementation& impl) const;
+
+  void ComputeLinkInterfaceRuntimeLibraries(
+    const std::string& config, cmOptionalLinkInterface& iface) const;
 
 public:
   const std::vector<const cmGeneratorTarget*>& GetLinkImplementationClosure(

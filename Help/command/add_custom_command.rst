@@ -46,6 +46,12 @@ The options are:
   Append the ``COMMAND`` and ``DEPENDS`` option values to the custom
   command for the first output specified.  There must have already
   been a previous call to this command with the same output.
+
+  If the previous call specified the output via a generator expression,
+  the output specified by the current call must match in at least one
+  configuration after evaluating generator expressions.  In this case,
+  the appended commands and dependencies apply to all configurations.
+
   The ``COMMENT``, ``MAIN_DEPENDENCY``, and ``WORKING_DIRECTORY``
   options are currently ignored when APPEND is given, but may be
   used in the future.
@@ -72,6 +78,12 @@ The options are:
 
   The :ref:`Makefile Generators` will remove ``BYPRODUCTS`` and other
   :prop_sf:`GENERATED` files during ``make clean``.
+
+  .. versionadded:: 3.20
+    Arguments to ``BYPRODUCTS`` may use a restricted set of
+    :manual:`generator expressions <cmake-generator-expressions(7)>`.
+    :ref:`Target-dependent expressions <Target-Dependent Queries>` are not
+    permitted.
 
 ``COMMAND``
   Specify the command-line(s) to execute at build time.
@@ -101,8 +113,8 @@ The options are:
 
   Arguments to ``COMMAND`` may use
   :manual:`generator expressions <cmake-generator-expressions(7)>`.
-  Use the ``TARGET_FILE`` generator expression to refer to the location of
-  a target later in the command line (i.e. as a command argument rather
+  Use the :genex:`TARGET_FILE` generator expression to refer to the location
+  of a target later in the command line (i.e. as a command argument rather
   than as the command to execute).
 
   Whenever one of the following target based generator expressions are used as
@@ -191,6 +203,10 @@ The options are:
   Note that the ``IMPLICIT_DEPENDS`` option is currently supported
   only for Makefile generators and will be ignored by other generators.
 
+  .. note::
+
+    This option cannot be specified at the same time as ``DEPFILE`` option.
+
 ``JOB_POOL``
   .. versionadded:: 3.15
 
@@ -219,6 +235,12 @@ The options are:
   If the output of the custom command is not actually created
   as a file on disk it should be marked with the :prop_sf:`SYMBOLIC`
   source file property.
+
+  .. versionadded:: 3.20
+    Arguments to ``OUTPUT`` may use a restricted set of
+    :manual:`generator expressions <cmake-generator-expressions(7)>`.
+    :ref:`Target-dependent expressions <Target-Dependent Queries>` are not
+    permitted.
 
 ``USES_TERMINAL``
   .. versionadded:: 3.2
@@ -249,15 +271,76 @@ The options are:
 ``DEPFILE``
   .. versionadded:: 3.7
 
-  Specify a ``.d`` depfile for the :generator:`Ninja` generator.
-  A ``.d`` file holds dependencies usually emitted by the custom
-  command itself.
-  Using ``DEPFILE`` with other generators than Ninja is an error.
+  Specify a ``.d`` depfile for the :generator:`Ninja`, :generator:`Xcode` and
+  :ref:`Makefile <Makefile Generators>` generators. The depfile may use
+  "generator expressions" with the syntax ``$<...>``. See the
+  :manual:`generator-expressions(7) <cmake-generator-expressions(7)>` manual
+  for available expressions. A ``.d`` file holds dependencies usually emitted
+  by the custom command itself.
+
+  Using ``DEPFILE`` with other generators than :generator:`Ninja`,
+  :generator:`Xcode` or :ref:`Makefile <Makefile Generators>` is an error.
+
+  .. versionadded:: 3.20
+    Added support for :ref:`Makefile Generators`.
+
+  .. versionadded:: 3.21
+    Added support for :ref:`Visual Studio Generators` with VS 2012 and above,
+    for the :generator:`Xcode` generator, and for
+    :manual:`generator expressions <cmake-generator-expressions(7)>`.
 
   If the ``DEPFILE`` argument is relative, it should be relative to
   :variable:`CMAKE_CURRENT_BINARY_DIR`, and any relative paths inside the
   ``DEPFILE`` should also be relative to :variable:`CMAKE_CURRENT_BINARY_DIR`
-  (see policy :policy:`CMP0116`.)
+  (see policy :policy:`CMP0116`. This policy is always ``NEW`` for
+  :ref:`Makefile Generators`, :ref:`Visual Studio Generators`,
+  and the :generator:`Xcode` generator).
+
+  .. note::
+
+    For :ref:`Makefile Generators`, this option cannot be specified at the
+    same time as ``IMPLICIT_DEPENDS`` option.
+
+Examples: Generating Files
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Custom commands may be used to generate source files.
+For example, the code:
+
+.. code-block:: cmake
+
+  add_custom_command(
+    OUTPUT out.c
+    COMMAND someTool -i ${CMAKE_CURRENT_SOURCE_DIR}/in.txt
+                     -o out.c
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/in.txt
+    VERBATIM)
+  add_library(myLib out.c)
+
+adds a custom command to run ``someTool`` to generate ``out.c`` and then
+compile the generated source as part of a library.  The generation rule
+will re-run whenever ``in.txt`` changes.
+
+.. versionadded:: 3.20
+  One may use generator expressions to specify per-configuration outputs.
+  For example, the code:
+
+  .. code-block:: cmake
+
+    add_custom_command(
+      OUTPUT "out-$<CONFIG>.c"
+      COMMAND someTool -i ${CMAKE_CURRENT_SOURCE_DIR}/in.txt
+                       -o "out-$<CONFIG>.c"
+                       -c "$<CONFIG>"
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/in.txt
+      VERBATIM)
+    add_library(myLib "out-$<CONFIG>.c")
+
+  adds a custom command to run ``someTool`` to generate ``out-<config>.c``,
+  where ``<config>`` is the build configuration, and then compile the generated
+  source as part of a library.
+
+.. _`add_custom_command(TARGET)`:
 
 Build Events
 ^^^^^^^^^^^^
@@ -308,3 +391,52 @@ of the following is specified:
   configuration and no "empty-string-command" will be added.
 
   This allows to add individual build events for every configuration.
+
+.. versionadded:: 3.21
+  Support for target-dependent generator expressions.
+
+Examples: Build Events
+^^^^^^^^^^^^^^^^^^^^^^
+
+A ``POST_BUILD`` event may be used to post-process a binary after linking.
+For example, the code:
+
+.. code-block:: cmake
+
+  add_executable(myExe myExe.c)
+  add_custom_command(
+    TARGET myExe POST_BUILD
+    COMMAND someHasher -i "$<TARGET_FILE:myExe>"
+                       -o "$<TARGET_FILE:myExe>.hash"
+    VERBATIM)
+
+will run ``someHasher`` to produce a ``.hash`` file next to the executable
+after linking.
+
+.. versionadded:: 3.20
+  One may use generator expressions to specify per-configuration byproducts.
+  For example, the code:
+
+  .. code-block:: cmake
+
+    add_library(myPlugin MODULE myPlugin.c)
+    add_custom_command(
+      TARGET myPlugin POST_BUILD
+      COMMAND someHasher -i "$<TARGET_FILE:myPlugin>"
+                         --as-code "myPlugin-hash-$<CONFIG>.c"
+      BYPRODUCTS "myPlugin-hash-$<CONFIG>.c"
+      VERBATIM)
+    add_executable(myExe myExe.c "myPlugin-hash-$<CONFIG>.c")
+
+  will run ``someHasher`` after linking ``myPlugin``, e.g. to produce a ``.c``
+  file containing code to check the hash of ``myPlugin`` that the ``myExe``
+  executable can use to verify it before loading.
+
+Ninja Multi-Config
+^^^^^^^^^^^^^^^^^^
+
+.. versionadded:: 3.20
+
+  ``add_custom_command`` supports the :generator:`Ninja Multi-Config`
+  generator's cross-config capabilities. See the generator documentation
+  for more information.

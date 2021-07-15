@@ -5,11 +5,11 @@
 #include <sstream>
 #include <unordered_set>
 
-#include "cmCheckCustomOutputs.h"
 #include "cmCustomCommand.h"
 #include "cmCustomCommandLines.h"
 #include "cmCustomCommandTypes.h"
 #include "cmExecutionStatus.h"
+#include "cmGeneratorExpression.h"
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
@@ -188,7 +188,8 @@ bool cmAddCustomCommandCommand(std::vector<std::string> const& args,
         case doing_output:
         case doing_outputs:
         case doing_byproducts:
-          if (!cmSystemTools::FileIsFullPath(copy)) {
+          if (!cmSystemTools::FileIsFullPath(copy) &&
+              cmGeneratorExpression::Find(copy) != 0) {
             // This is an output to be generated, so it should be
             // under the build tree.
             filename = cmStrCat(mf.GetCurrentBinaryDirectory(), '/');
@@ -295,11 +296,10 @@ bool cmAddCustomCommandCommand(std::vector<std::string> const& args,
     status.SetError("given APPEND option with no OUTPUT.");
     return false;
   }
-
-  // Make sure the output names and locations are safe.
-  if (!cmCheckCustomOutputs(output, "OUTPUT", status) ||
-      !cmCheckCustomOutputs(outputs, "OUTPUTS", status) ||
-      !cmCheckCustomOutputs(byproducts, "BYPRODUCTS", status)) {
+  if (!implicit_depends.empty() && !depfile.empty() &&
+      mf.GetGlobalGenerator()->GetName() != "Ninja") {
+    // Makefiles generators does not support both at the same time
+    status.SetError("IMPLICIT_DEPENDS and DEPFILE can not both be specified.");
     return false;
   }
 
@@ -320,15 +320,16 @@ bool cmAddCustomCommandCommand(std::vector<std::string> const& args,
   if (source.empty() && output.empty()) {
     // Source is empty, use the target.
     std::vector<std::string> no_depends;
-    mf.AddCustomCommandToTarget(target, byproducts, no_depends, commandLines,
-                                cctype, comment, working.c_str(),
-                                escapeOldStyle, uses_terminal, depfile,
-                                job_pool, command_expand_lists);
+    mf.AddCustomCommandToTarget(
+      target, byproducts, no_depends, commandLines, cctype, comment,
+      working.c_str(), mf.GetPolicyStatus(cmPolicies::CMP0116), escapeOldStyle,
+      uses_terminal, depfile, job_pool, command_expand_lists);
   } else if (target.empty()) {
     // Target is empty, use the output.
     mf.AddCustomCommandToOutput(
       output, byproducts, depends, main_dependency, implicit_depends,
-      commandLines, comment, working.c_str(), nullptr, false, escapeOldStyle,
+      commandLines, comment, working.c_str(),
+      mf.GetPolicyStatus(cmPolicies::CMP0116), nullptr, false, escapeOldStyle,
       uses_terminal, command_expand_lists, depfile, job_pool);
   } else if (!byproducts.empty()) {
     status.SetError("BYPRODUCTS may not be specified with SOURCE signatures");
@@ -365,7 +366,8 @@ bool cmAddCustomCommandCommand(std::vector<std::string> const& args,
 
     // Use the old-style mode for backward compatibility.
     mf.AddCustomCommandOldStyle(target, outputs, depends, source, commandLines,
-                                comment);
+                                comment,
+                                mf.GetPolicyStatus(cmPolicies::CMP0116));
   }
 
   return true;

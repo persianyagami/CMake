@@ -42,6 +42,7 @@ class cmDirectoryId;
 class cmExportBuildFileGenerator;
 class cmExternalMakefileProjectGenerator;
 class cmGeneratorTarget;
+class cmInstallRuntimeDependencySet;
 class cmLinkLineComputer;
 class cmLocalGenerator;
 class cmMakefile;
@@ -69,17 +70,17 @@ struct GeneratedMakeCommand
   void Add(T&&... args)
   {
     // iterate the args and append each one
-    AppendStrs(PrimaryCommand, std::forward<T>(args)...);
+    AppendStrs(this->PrimaryCommand, std::forward<T>(args)...);
   }
 
   // Add each value in the iterators as a separate element to the vector
   void Add(std::vector<std::string>::const_iterator start,
            std::vector<std::string>::const_iterator end)
   {
-    cm::append(PrimaryCommand, start, end);
+    cm::append(this->PrimaryCommand, start, end);
   }
 
-  std::string Printable() const { return cmJoin(PrimaryCommand, " "); }
+  std::string Printable() const { return cmJoin(this->PrimaryCommand, " "); }
 
   std::vector<std::string> PrimaryCommand;
   bool RequiresOutputForward = false;
@@ -249,9 +250,13 @@ public:
 
   virtual void PrintBuildCommandAdvice(std::ostream& os, int jobs) const;
 
-  /** Generate a "cmake --build" call for a given target and config.  */
+  /**
+   * Generate a "cmake --build" call for a given target, config and parallel
+   * level.
+   */
   std::string GenerateCMakeBuildCommand(const std::string& target,
                                         const std::string& config,
+                                        const std::string& parallel,
                                         const std::string& native,
                                         bool ignoreErrors);
 
@@ -438,6 +443,8 @@ public:
 
   virtual bool IsVisualStudio() const { return false; }
 
+  virtual bool IsNinja() const { return false; }
+
   /** Return true if we know the exact location of object files.
       If false, store the reason in the given string.
       This is meaningful only after EnableLanguage has been called.  */
@@ -501,7 +508,7 @@ public:
     cmSourceFile* sf) const;
 
 #if !defined(CMAKE_BOOTSTRAP)
-  cmFileLockPool& GetFileLockPool() { return FileLockPool; }
+  cmFileLockPool& GetFileLockPool() { return this->FileLockPool; }
 #endif
 
   bool GetConfigureDoneCMP0026() const
@@ -521,6 +528,11 @@ public:
   std::string const& GetRealPath(std::string const& dir);
 
   std::string NewDeferId();
+
+  cmInstallRuntimeDependencySet* CreateAnonymousRuntimeDependencySet();
+
+  cmInstallRuntimeDependencySet* GetNamedRuntimeDependencySet(
+    const std::string& name);
 
 protected:
   // for a project collect all its targets by following depend
@@ -584,7 +596,7 @@ protected:
   void AddGlobalTarget_RebuildCache(
     std::vector<GlobalTargetInfo>& targets) const;
   void AddGlobalTarget_Install(std::vector<GlobalTargetInfo>& targets);
-  cmTarget CreateGlobalTarget(GlobalTargetInfo const& gti, cmMakefile* mf);
+  void CreateGlobalTarget(GlobalTargetInfo const& gti, cmMakefile* mf);
 
   std::string FindMakeProgramFile;
   std::string ConfiguredFilesPath;
@@ -740,6 +752,11 @@ private:
   std::map<std::string, std::string> RealPaths;
 
   std::unordered_set<std::string> GeneratedFiles;
+
+  std::vector<std::unique_ptr<cmInstallRuntimeDependencySet>>
+    RuntimeDependencySets;
+  std::map<std::string, cmInstallRuntimeDependencySet*>
+    RuntimeDependencySetsByName;
 
 #if !defined(CMAKE_BOOTSTRAP)
   // Pool of file locks

@@ -4,9 +4,12 @@ cmake_policy(SET CMP0057 NEW)
 
 project(CompileFeatures)
 
+set(ext_C c)
+set(ext_CXX cpp)
+
 macro(run_test feature lang)
   if (${feature} IN_LIST CMAKE_${lang}_COMPILE_FEATURES)
-    add_library(test_${feature} OBJECT ${feature})
+    add_library(test_${feature} OBJECT ${feature}.${ext_${lang}})
     set_property(TARGET test_${feature}
       PROPERTY COMPILE_FEATURES "${feature}"
     )
@@ -15,7 +18,7 @@ macro(run_test feature lang)
   endif()
 endmacro()
 
-if(NOT CMAKE_C_COMPILER_ID MATCHES "^(Cray|PGI|XL|XLClang)$")
+if(NOT CMAKE_C_COMPILER_ID MATCHES "^(Cray|PGI|NVHPC|XL|XLClang|IntelLLVM|Fujitsu|FujitsuClang)$")
   get_property(c_features GLOBAL PROPERTY CMAKE_C_KNOWN_FEATURES)
   list(FILTER c_features EXCLUDE REGEX "^c_std_[0-9][0-9]")
   foreach(feature ${c_features})
@@ -23,7 +26,7 @@ if(NOT CMAKE_C_COMPILER_ID MATCHES "^(Cray|PGI|XL|XLClang)$")
   endforeach()
 endif()
 
-if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Cray|PGI|XL|XLClang)$")
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Cray|PGI|NVHPC|XL|XLClang|IntelLLVM|Fujitsu|FujitsuClang)$")
   get_property(cxx_features GLOBAL PROPERTY CMAKE_CXX_KNOWN_FEATURES)
   list(FILTER cxx_features EXCLUDE REGEX "^cxx_std_[0-9][0-9]")
   foreach(feature ${cxx_features})
@@ -234,6 +237,8 @@ if (C_expected_features)
     if (std_flag_idx EQUAL -1)
       add_executable(default_dialect_C default_dialect.c)
       target_compile_definitions(default_dialect_C PRIVATE
+        DEFAULT_C23=$<EQUAL:${CMAKE_C_STANDARD_DEFAULT},23>
+        DEFAULT_C17=$<EQUAL:${CMAKE_C_STANDARD_DEFAULT},17>
         DEFAULT_C11=$<EQUAL:${CMAKE_C_STANDARD_DEFAULT},11>
         DEFAULT_C99=$<EQUAL:${CMAKE_C_STANDARD_DEFAULT},99>
         DEFAULT_C90=$<EQUAL:${CMAKE_C_STANDARD_DEFAULT},90>

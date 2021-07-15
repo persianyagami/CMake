@@ -1,5 +1,6 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _SCL_SECURE_NO_WARNINGS
 
 #include "cmStringCommand.h"
@@ -240,7 +241,7 @@ bool RegexMatch(std::vector<std::string> const& args,
   status.GetMakefile().ClearMatches();
   // Compile the regular expression.
   cmsys::RegularExpression re;
-  if (!re.compile(regex.c_str())) {
+  if (!re.compile(regex)) {
     std::string e =
       "sub-command REGEX, mode MATCH failed to compile regex \"" + regex +
       "\".";
@@ -282,7 +283,7 @@ bool RegexMatchAll(std::vector<std::string> const& args,
   status.GetMakefile().ClearMatches();
   // Compile the regular expression.
   cmsys::RegularExpression re;
-  if (!re.compile(regex.c_str())) {
+  if (!re.compile(regex)) {
     std::string e =
       "sub-command REGEX, mode MATCHALL failed to compile regex \"" + regex +
       "\".";
@@ -966,21 +967,21 @@ public:
 
 const std::string& Args::PopFront(cm::string_view error)
 {
-  if (empty()) {
+  if (this->empty()) {
     throw json_error({ error });
   }
-  const std::string& res = *begin();
-  advance(1);
+  const std::string& res = *this->begin();
+  this->advance(1);
   return res;
 }
 
 const std::string& Args::PopBack(cm::string_view error)
 {
-  if (empty()) {
+  if (this->empty()) {
     throw json_error({ error });
   }
-  const std::string& res = *(end() - 1);
-  retreat(1);
+  const std::string& res = *(this->end() - 1);
+  this->retreat(1);
   return res;
 }
 

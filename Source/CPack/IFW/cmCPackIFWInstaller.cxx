@@ -66,7 +66,7 @@ void cmCPackIFWInstaller::ConfigureFromOptions()
         this->GetOption("CPACK_IFW_PACKAGE_PUBLISHER")) {
     this->Publisher = optIFW_PACKAGE_PUBLISHER;
   } else if (const char* optPACKAGE_VENDOR =
-               GetOption("CPACK_PACKAGE_VENDOR")) {
+               this->GetOption("CPACK_PACKAGE_VENDOR")) {
     this->Publisher = optPACKAGE_VENDOR;
   }
 
@@ -186,11 +186,20 @@ void cmCPackIFWInstaller::ConfigureFromOptions()
         this->WizardShowPageList.clear();
       }
     } else {
+      std::string currentVersionMsg;
+      if (this->Generator) {
+        currentVersionMsg =
+          "QtIFW version " + this->Generator->FrameworkVersion;
+      } else {
+        currentVersionMsg = "an older QtIFW version";
+      }
       cmCPackIFWLogger(
         WARNING,
-        "Option CPACK_IFW_PACKAGE_WIZARD_SHOW_PAGE_LIST is set to value \""
-          << option << "\". But has no any effect for QtIFW less than 4.0 "
-          << "and will be skipped." << std::endl);
+        "Option CPACK_IFW_PACKAGE_WIZARD_SHOW_PAGE_LIST is set to \""
+          << option
+          << "\", but it is only supported with QtIFW version 4.0 or later. "
+             "It is being ignored because you are using "
+          << currentVersionMsg << std::endl);
     }
   }
 
@@ -204,7 +213,7 @@ void cmCPackIFWInstaller::ConfigureFromOptions()
         this->GetOption("CPACK_IFW_PACKAGE_START_MENU_DIRECTORY")) {
     this->StartMenuDir = optIFW_START_MENU_DIR;
   } else {
-    this->StartMenuDir = Name;
+    this->StartMenuDir = this->Name;
   }
 
   // Default target directory for installation
@@ -275,9 +284,8 @@ void cmCPackIFWInstaller::ConfigureFromOptions()
 class cmCPackIFWResourcesParser : public cmXMLParser
 {
 public:
-  cmCPackIFWResourcesParser(cmCPackIFWInstaller* i)
+  explicit cmCPackIFWResourcesParser(cmCPackIFWInstaller* i)
     : installer(i)
-    , file(false)
   {
     this->path = i->Directory + "/resources";
   }
@@ -296,14 +304,16 @@ public:
   }
 
   cmCPackIFWInstaller* installer;
-  bool file, hasFiles, hasErrors;
+  bool file = false;
+  bool hasFiles = false;
+  bool hasErrors = false;
   std::string path, basePath;
 
 protected:
   void StartElement(const std::string& name, const char** /*atts*/) override
   {
     this->file = name == "file";
-    if (file) {
+    if (this->file) {
       this->hasFiles = true;
     }
   }
@@ -337,7 +347,7 @@ void cmCPackIFWInstaller::GenerateInstallerFile()
 
   xout.StartDocument();
 
-  WriteGeneratedByToStrim(xout);
+  this->WriteGeneratedByToStrim(xout);
 
   xout.StartElement("Installer");
 
@@ -535,7 +545,7 @@ void cmCPackIFWInstaller::GeneratePackageFiles()
       package.ConfigureFromGroup(option);
       std::string forcedOption = "CPACK_IFW_COMPONENT_GROUP_" +
         cmsys::SystemTools::UpperCase(option) + "_FORCED_INSTALLATION";
-      if (!GetOption(forcedOption)) {
+      if (!this->GetOption(forcedOption)) {
         package.ForcedInstallation = "true";
       }
     } else {

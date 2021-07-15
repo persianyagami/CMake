@@ -144,7 +144,7 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
     this->RequiredCMakeVersion = CMake_VERSION_ENCODE(v[0], v[1], v[2]);
   }
 
-  this->DebugMode = ComputeIfDebugModeWanted();
+  this->DebugMode = this->ComputeIfDebugModeWanted();
   this->DebugBuffer.clear();
 
   // Lookup target architecture, if any.
@@ -478,17 +478,35 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
       this->VersionMaxPatch, this->VersionMaxTweak);
   }
 
+  const std::string makePackageRequiredVar =
+    cmStrCat("CMAKE_REQUIRE_FIND_PACKAGE_", this->Name);
+  const bool makePackageRequiredSet =
+    this->Makefile->IsOn(makePackageRequiredVar);
+  if (makePackageRequiredSet) {
+    if (this->Required) {
+      this->Makefile->IssueMessage(
+        MessageType::WARNING,
+        cmStrCat("for module ", this->Name,
+                 " already called with REQUIRED, thus ",
+                 makePackageRequiredVar, " has no effect."));
+    } else {
+      this->Required = true;
+    }
+  }
+
   std::string disableFindPackageVar =
     cmStrCat("CMAKE_DISABLE_FIND_PACKAGE_", this->Name);
   if (this->Makefile->IsOn(disableFindPackageVar)) {
     if (this->Required) {
       this->SetError(
-        cmStrCat("for module ", this->Name, " called with REQUIRED, but ",
-                 disableFindPackageVar,
+        cmStrCat("for module ", this->Name,
+                 (makePackageRequiredSet
+                    ? " was made REQUIRED with " + makePackageRequiredVar
+                    : " called with REQUIRED, "),
+                 " but ", disableFindPackageVar,
                  " is enabled. A REQUIRED package cannot be disabled."));
       return false;
     }
-
     return true;
   }
 
@@ -534,7 +552,7 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
         loadedPackage = true;
       } else {
         // The package was not loaded. Report errors.
-        if (HandlePackageMode(HandlePackageModeType::Module)) {
+        if (this->HandlePackageMode(HandlePackageModeType::Module)) {
           loadedPackage = true;
         }
       }
@@ -1138,6 +1156,11 @@ bool cmFindPackageCommand::FindConfig()
   // We force the value since we do not get here if it was already set.
   this->Makefile->AddCacheDefinition(this->Variable, init, help.c_str(),
                                      cmStateEnums::PATH, true);
+  if (this->Makefile->GetPolicyStatus(cmPolicies::CMP0126) ==
+        cmPolicies::NEW &&
+      this->Makefile->IsNormalDefinitionSet(this->Variable)) {
+    this->Makefile->AddDefinition(this->Variable, init);
+  }
 
   return found;
 }
@@ -1145,34 +1168,27 @@ bool cmFindPackageCommand::FindConfig()
 bool cmFindPackageCommand::FindPrefixedConfig()
 {
   std::vector<std::string> const& prefixes = this->SearchPaths;
-  for (std::string const& p : prefixes) {
-    if (this->SearchPrefix(p)) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(
+    prefixes.begin(), prefixes.end(),
+    [this](std::string const& p) -> bool { return this->SearchPrefix(p); });
 }
 
 bool cmFindPackageCommand::FindFrameworkConfig()
 {
   std::vector<std::string> const& prefixes = this->SearchPaths;
-  for (std::string const& p : prefixes) {
-    if (this->SearchFrameworkPrefix(p)) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(prefixes.begin(), prefixes.end(),
+                     [this](std::string const& p) -> bool {
+                       return this->SearchFrameworkPrefix(p);
+                     });
 }
 
 bool cmFindPackageCommand::FindAppBundleConfig()
 {
   std::vector<std::string> const& prefixes = this->SearchPaths;
-  for (std::string const& p : prefixes) {
-    if (this->SearchAppBundlePrefix(p)) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(prefixes.begin(), prefixes.end(),
+                     [this](std::string const& p) -> bool {
+                       return this->SearchAppBundlePrefix(p);
+                     });
 }
 
 bool cmFindPackageCommand::ReadListFile(const std::string& f,
@@ -2070,8 +2086,8 @@ public:
   void SetSort(cmFindPackageCommand::SortOrderType o,
                cmFindPackageCommand::SortDirectionType d)
   {
-    SortOrder = o;
-    SortDirection = d;
+    this->SortOrder = o;
+    this->SortDirection = d;
   }
 
 protected:
@@ -2102,8 +2118,8 @@ private:
     // before testing the matches check if there is a specific sorting order to
     // perform
     if (this->SortOrder != cmFindPackageCommand::None) {
-      cmFindPackageCommand::Sort(matches.begin(), matches.end(), SortOrder,
-                                 SortDirection);
+      cmFindPackageCommand::Sort(matches.begin(), matches.end(),
+                                 this->SortOrder, this->SortDirection);
     }
 
     for (std::string const& i : matches) {

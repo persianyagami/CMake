@@ -140,3 +140,23 @@ void cmCustomCommand::SetJobPool(const std::string& job_pool)
 {
   this->JobPool = job_pool;
 }
+
+cmPolicies::PolicyStatus cmCustomCommand::GetCMP0116Status() const
+{
+  return this->CMP0116Status;
+}
+
+void cmCustomCommand::SetCMP0116Status(cmPolicies::PolicyStatus cmp0116)
+{
+  this->CMP0116Status = cmp0116;
+}
+
+const std::string& cmCustomCommand::GetTarget() const
+{
+  return this->Target;
+}
+
+void cmCustomCommand::SetTarget(const std::string& target)
+{
+  this->Target = target;
+}

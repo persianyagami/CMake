@@ -41,6 +41,7 @@ public:
     const char* Source = nullptr;
     const char* AssemblySource = nullptr;
     const char* PreprocessedSource = nullptr;
+    const char* DynDepFile = nullptr;
     const char* Output = nullptr;
     const char* Object = nullptr;
     const char* ObjectDir = nullptr;
@@ -66,6 +67,7 @@ public:
     const char* ISPCHeader = nullptr;
     const char* Fatbinary = nullptr;
     const char* RegisterFile = nullptr;
+    const char* Launcher = nullptr;
   };
 
   // Expand rule variables in CMake of the type found in language rules

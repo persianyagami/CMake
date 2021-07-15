@@ -180,3 +180,24 @@ on Windows Nullsoft Scriptable Install System.
  .. versionadded:: 3.18
 
  If set, declares that the installer is DPI-aware.
+
+.. variable:: CPACK_NSIS_BRANDING_TEXT
+
+ .. versionadded:: 3.20
+
+ If set, updates the text at the bottom of the install window.
+ To set the string to blank, use a space (" ").
+
+.. variable:: CPACK_NSIS_BRANDING_TEXT_TRIM_POSITION
+
+ .. versionadded:: 3.20
+
+ If set, trim down the size of the control to the size of the branding text string.
+ Allowed values for this variable are ``LEFT``, ``CENTER`` or ``RIGHT``.
+ If not specified, the default behavior is ``LEFT``.
+
+.. variable:: CPACK_NSIS_EXECUTABLE
+
+ .. versionadded:: 3.21
+
+ If set, specify the name of the NSIS executable. Default is ``makensis``.

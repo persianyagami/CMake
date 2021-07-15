@@ -17,6 +17,21 @@ class cmOutputConverter
 public:
   cmOutputConverter(cmStateSnapshot const& snapshot);
 
+  /**
+   * Convert the given remote path to a relative path with respect to
+   * one of our common work directories.  The path must use forward
+   * slashes and not already be escaped or quoted.
+   * The conversion is skipped if the paths are not both in the source
+   * or both in the binary tree.
+   */
+  std::string MaybeRelativeToTopBinDir(std::string const& path) const;
+  std::string MaybeRelativeToCurBinDir(std::string const& path) const;
+
+  std::string const& GetRelativePathTopSource() const;
+  std::string const& GetRelativePathTopBinary() const;
+  void SetRelativePathTopSource(std::string const& top);
+  void SetRelativePathTopBinary(std::string const& top);
+
   enum OutputFormat
   {
     SHELL,
@@ -102,17 +117,29 @@ public:
   };
   static FortranPreprocess GetFortranPreprocess(cm::string_view value);
 
+protected:
+  cmStateSnapshot StateSnapshot;
+
 private:
   cmState* GetState() const;
 
-  static bool Shell__CharNeedsQuotes(char c, int flags);
-  static cm::string_view::iterator Shell__SkipMakeVariables(
+  static bool Shell_CharNeedsQuotes(char c, int flags);
+  static cm::string_view::iterator Shell_SkipMakeVariables(
     cm::string_view::iterator begin, cm::string_view::iterator end);
-  static bool Shell__ArgumentNeedsQuotes(cm::string_view in, int flags);
-  static std::string Shell__GetArgument(cm::string_view in, int flags);
-
-private:
-  cmStateSnapshot StateSnapshot;
+  static bool Shell_ArgumentNeedsQuotes(cm::string_view in, int flags);
+  static std::string Shell_GetArgument(cm::string_view in, int flags);
 
   bool LinkScriptShell;
+
+  // The top-most directories for relative path conversion.  Both the
+  // source and destination location of a relative path conversion
+  // must be underneath one of these directories (both under source or
+  // both under binary) in order for the relative path to be evaluated
+  // safely by the build tools.
+  std::string RelativePathTopSource;
+  std::string RelativePathTopBinary;
+  void ComputeRelativePathTopSource();
+  void ComputeRelativePathTopBinary();
+  std::string MaybeRelativeTo(std::string const& local_path,
+                              std::string const& remote_path) const;
 };

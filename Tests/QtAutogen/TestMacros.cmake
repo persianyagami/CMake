@@ -1,12 +1,19 @@
 # Autogen build options
 set(Autogen_BUILD_OPTIONS "-DQT_TEST_VERSION=${QT_TEST_VERSION}")
-if(NOT _isMultiConfig)   # Set in Tests/CMakeLists.txt
+if(_isMultiConfig)   # Set in Tests/CMakeLists.txt
+  list(APPEND Autogen_CTEST_OPTIONS --build-config $<CONFIGURATION>)
+else()
   list(APPEND Autogen_BUILD_OPTIONS "-DCMAKE_BUILD_TYPE=$<CONFIGURATION>")
 endif()
 list(APPEND Autogen_BUILD_OPTIONS
     "-DCMAKE_AUTOGEN_VERBOSE=1"
     "-DQT_QMAKE_EXECUTABLE:FILEPATH=${QT_QMAKE_EXECUTABLE}"
 )
+# XXX(xcode-per-cfg-src): Drop the NO_PER_CONFIG_SOURCES exclusion
+# when the Xcode generator supports per-config sources.
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+  list(APPEND Autogen_BUILD_OPTIONS -DNO_PER_CONFIG_SOURCES=1)
+endif()
 
 # A macro to add a QtAutogen test
 macro(ADD_AUTOGEN_TEST NAME)
@@ -30,11 +37,13 @@ macro(ADD_AUTOGEN_TEST NAME)
     "${_BuildDir}"
     ${build_generator_args}
     --build-project ${NAME}
+    ${Autogen_CTEST_OPTIONS}
     --build-exe-dir "${_BuildDir}"
     --force-new-ctest-process
     --build-options ${build_options} ${Autogen_BUILD_OPTIONS}
     ${_TestCommand}
   )
+  set_tests_properties("${_QtXAutogen}.${NAME}" PROPERTIES LABELS "Qt${QT_TEST_VERSION}")
   list(APPEND TEST_BUILD_DIRS "${_BuildDir}")
   unset(_TestCommand)
   unset(_QtXAutogen)
