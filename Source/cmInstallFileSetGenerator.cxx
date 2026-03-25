@@ -21,6 +21,7 @@
 #include "cmList.h"
 #include "cmListFileCache.h"
 #include "cmLocalGenerator.h"
+#include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmStringAlgorithms.h"
 #include "cmTarget.h"
@@ -91,11 +92,26 @@ bool cmInstallFileSetGenerator::Compute(cmLocalGenerator* lg)
   return true;
 }
 
+std::string cmInstallFileSetGenerator::GetDestination() const
+{
+  return this->Destination;
+}
+
 std::string cmInstallFileSetGenerator::GetDestination(
   std::string const& config) const
 {
-  return cmGeneratorExpression::Evaluate(this->Destination,
-                                         this->LocalGenerator, config);
+  return this->GetDestination(this->Target, config).unescapedDestination;
+}
+
+cmInstallFileSetGenerator::DestinationContext
+cmInstallFileSetGenerator::GetDestination(cmGeneratorTarget* gte,
+                                          std::string const& config) const
+{
+  cmGeneratorExpression ge(*gte->Makefile->GetCMakeInstance());
+  auto cge = ge.Parse(this->Destination);
+
+  std::string const dest = cge->Evaluate(gte->LocalGenerator, config, gte);
+  return { dest, cge->GetHadContextSensitiveCondition() };
 }
 
 void cmInstallFileSetGenerator::GenerateScriptForConfig(
