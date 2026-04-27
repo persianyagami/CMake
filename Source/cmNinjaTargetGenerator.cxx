@@ -2202,6 +2202,9 @@ void cmNinjaTargetGenerator::WriteSwiftObjectBuildStatement(
   // Importable targets keep -emit-module on compile so swiftc still emits
   // .swiftdoc.  When splitting module emission, both the .swiftmodule output
   // and -emit-module flags move entirely to the separate emit-module edge.
+  if (targetIsImportable) {
+    this->Configs[config].SwiftModuleOutput = moduleFilepath;
+  }
   if (targetIsImportable && !emitModuleSeparately) {
     objBuild.Outputs.push_back(moduleFilepath);
   }
@@ -2669,6 +2672,16 @@ cmNinjaDeps cmNinjaTargetGenerator::GetObjects(std::string const& config) const
   auto const it = this->Configs.find(config);
   if (it != this->Configs.end()) {
     return it->second.Objects;
+  }
+  return {};
+}
+
+std::string cmNinjaTargetGenerator::GetSwiftModuleOutput(
+  std::string const& config) const
+{
+  auto const it = this->Configs.find(config);
+  if (it != this->Configs.end()) {
+    return it->second.SwiftModuleOutput;
   }
   return {};
 }

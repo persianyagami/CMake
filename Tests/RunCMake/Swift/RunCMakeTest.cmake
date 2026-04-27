@@ -171,6 +171,14 @@ if(RunCMake_GENERATOR MATCHES "Ninja")
   endblock()
 
   block()
+    run_cmake(EmitModuleSeparatelyLinkDep)
+  endblock()
+
+  block()
+    run_cmake(EmitModuleSeparatelyLinkDepCustomPath)
+  endblock()
+
+  block()
     set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/EmitModuleSeparatelyExistingModulePath-build)
     run_cmake(EmitModuleSeparatelyExistingModulePath)
     set(RunCMake_TEST_NO_CLEAN 1)
